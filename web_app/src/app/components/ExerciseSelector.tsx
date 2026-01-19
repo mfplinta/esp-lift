@@ -88,24 +88,11 @@ export default function ExerciseSelector({
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className={`fixed sm:absolute top-0 left-0 sm:top-full mt-0 sm:mt-2 w-screen sm:w-64 max-h-screen sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-2xl overflow-hidden z-50 ${
+          className={`sm:absolute top-0 left-0 sm:top-full mt-0 sm:mt-2 w-screen sm:w-64 max-h-screen sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-2xl overflow-hidden z-50 ${
             theme === 'dark'
               ? 'bg-gray-900 bg-opacity-95 backdrop-blur-md border-0 sm:border border-gray-700'
               : 'bg-white bg-opacity-95 backdrop-blur-md border-0 sm:border border-gray-300'
           }`}
-          style={{
-            left: '0',
-            right: '0',
-            marginLeft: '0',
-            marginRight: '0',
-            transform: 'none',
-            // On desktop, override with centered positioning
-            ...(window.innerWidth >= 640 && {
-              left: '50%',
-              right: 'auto',
-              transform: 'translateX(-50%)',
-            }),
-          }}
         >
           {/* Close button for mobile - hidden on desktop */}
           <div className="sm:hidden flex items-center justify-between p-4 border-b border-gray-700">

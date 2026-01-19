@@ -3,6 +3,7 @@ import {
   useEffect,
   useCallback,
   useImperativeHandle,
+  useRef,
   forwardRef,
 } from 'react';
 import {
@@ -29,16 +30,15 @@ const defaultNotificationConfig: Partial<NotificationConfig> = {
   showClose: true,
 };
 
-// Define the interface for the actions App.tsx can call
 export interface NotificationHandle {
   addNotification: (config: Omit<NotificationConfig, 'id'>) => void;
+  dismissByMessage: (message: string) => void;
 }
 
 interface NotificationStackProps {
   theme: 'light' | 'dark';
 }
 
-// Map variants to default icons and colors
 const variantIconMap: Record<
   NonNullable<NotificationConfig['variant']>,
   LucideIcon
@@ -86,31 +86,94 @@ const NotificationStack = forwardRef<
   NotificationStackProps
 >(({ theme }, ref) => {
   const [notifications, setNotifications] = useState<NotificationConfig[]>([]);
+  const timeoutMap = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map()
+  );
 
   const dismiss = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+    const timeout = timeoutMap.current.get(id);
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+      timeoutMap.current.delete(id);
+    }
   }, []);
 
-  // Expose the addNotification function to the parent
+  const dismissByMessage = useCallback((message: string) => {
+    setNotifications((prev) => {
+      const toRemove = prev.find((n) => n.message === message);
+      if (toRemove) {
+        const timeout = timeoutMap.current.get(toRemove.id);
+        if (timeout !== undefined) {
+          clearTimeout(timeout);
+          timeoutMap.current.delete(toRemove.id);
+        }
+        return prev.filter((n) => n.id !== toRemove.id);
+      }
+      return prev;
+    });
+  }, []);
+
   useImperativeHandle(ref, () => ({
     addNotification: (config) => {
-      const id = Math.random().toString(36).substring(2, 9);
-      const newNotification = { ...defaultNotificationConfig, ...config, id };
+      setNotifications((prev) => {
+        const existing = prev.find((n) => n.message === config.message);
+        if (existing) {
+          const updated = { ...existing, ...config };
 
-      setNotifications((prev) => [...prev, newNotification]);
+          const prevTimeout = timeoutMap.current.get(existing.id);
+          if (prevTimeout !== undefined) {
+            clearTimeout(prevTimeout);
+            timeoutMap.current.delete(existing.id);
+          }
 
-      if (config.autoDismiss) {
-        setTimeout(() => {
-          dismiss(id);
-        }, config.autoDismiss);
-      }
+          if (updated.autoDismiss !== undefined && updated.autoDismiss > 0) {
+            const newTimeout = setTimeout(() => {
+              dismiss(existing.id);
+            }, updated.autoDismiss);
+            timeoutMap.current.set(existing.id, newTimeout);
+          }
+
+          return prev.map((n) => (n.id === existing.id ? updated : n));
+        } else {
+          const id = Math.random().toString(36).substring(2, 9);
+          const newNotification: NotificationConfig = {
+            ...(defaultNotificationConfig as NotificationConfig),
+            ...config,
+            id,
+          };
+
+          if (
+            newNotification.autoDismiss !== undefined &&
+            newNotification.autoDismiss > 0
+          ) {
+            const newTimeout = setTimeout(() => {
+              dismiss(id);
+            }, newNotification.autoDismiss);
+            timeoutMap.current.set(id, newTimeout);
+          }
+
+          return [...prev, newNotification];
+        }
+      });
     },
+    dismissByMessage,
   }));
+
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      timeoutMap.current.forEach((timeout) => {
+        if (timeout !== undefined) clearTimeout(timeout);
+      });
+      timeoutMap.current.clear();
+    };
+  }, []);
 
   if (notifications.length === 0) return null;
 
   return (
-    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[99] flex flex-col gap-3 w-max pointer-events-none">
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-3 w-max pointer-events-none">
       {notifications.map((notification) => {
         const variant = notification.variant || 'default';
         const Icon = notification.icon || variantIconMap[variant];
@@ -152,5 +215,4 @@ const NotificationStack = forwardRef<
   );
 });
 
-NotificationStack.displayName = 'NotificationStack';
 export default NotificationStack;

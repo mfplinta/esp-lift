@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Sun, Moon, Settings, Clock, Wifi } from 'lucide-react';
+import { Sun, Moon, Settings, Clock, Wifi, Dumbbell } from 'lucide-react';
 import MachineVisualizer from '@/app/components/MachineVisualizer';
 import StatsDisplay from '@/app/components/StatsDisplay';
 import Controls from '@/app/components/Controls';
@@ -11,6 +11,10 @@ import NotificationStack, {
 } from '@/app/components/NotificationStack';
 import SetHistory, { SetHistoryHandle } from './components/SetHistory';
 import useWebSocket from 'react-use-websocket-lite';
+
+const MSG_WEBSOCKET_CONNECTING = 'WebSocket connecting...';
+const MSG_WEBSOCKET_CONNECTED = 'WebSocket connected';
+const MSG_WEBSOCKET_ERROR = 'Error connecting WebSocket';
 
 export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -52,16 +56,25 @@ export default function App() {
   // --- Helpers ---
   const notify = (msg: string, opt?: Partial<NotificationConfig>) =>
     notificationRef.current?.addNotification({ message: msg, ...opt });
+  const dismissNotification = (msg: string) =>
+    notificationRef.current?.dismissByMessage(msg);
 
   // --- API exercises ---
   const fetchExercises = async () => {
-    const response = await fetch('/exercises');
-    if (!response.ok) {
+    try {
+      const response = await fetch('/exercises');
+      if (!response.ok) {
+        throw new Error(
+          { status: response.status, error: response.statusText }.toString()
+        );
+      }
+
+      const data = await response.json();
+      setExercises(data.exercises);
+      if (data.length > 0) setSelectedExercise(data[0]);
+    } catch (e) {
       notify('Failed to fetch exercises', { variant: 'error' });
     }
-    const data = await response.json();
-    setExercises(data.exercises);
-    if (data.length > 0) setSelectedExercise(data[0]);
   };
 
   const addExercise = async (exercise: Exercise) => {
@@ -96,35 +109,52 @@ export default function App() {
   }, []);
 
   // --- WebSocket ---
-  useWebSocket({
+  const { readyState } = useWebSocket({
     url: `ws://${window.location.href.split('/')[2]}/ws`,
     onMessage: (e) => {
       const data = JSON.parse(e.data);
-      const clamp = (v: number) => Math.min(Math.max(0, v), 100);
+      const calibrated = Math.min(Math.max(0, data.calibrated ?? 0), 100);
 
       if (data.event === 'rotate') {
-        if (selectedExercise?.type === 'alternating' && data.name === 'right') {
-          setHandlePositionRight(
-            data.calibrated != null ? clamp(data.calibrated) : 0
-          );
-        } else if (
-          selectedExercise?.type === 'singular' ||
-          data.name === 'left'
-        ) {
-          setHandlePosition(
-            data.calibrated != null ? clamp(data.calibrated) : 0
-          );
+        if (selectedExercise?.type === 'alternating') {
+          if (data.name === 'right') {
+            setHandlePositionRight(calibrated);
+          } else {
+            setHandlePosition(calibrated);
+          }
+        } else {
+          setHandlePosition(calibrated);
         }
 
         if (data.calibrated == null)
-          notify(`Pull ${data.name} handle to calibrate`, {
+          notify(`Pull ${data.name} to calibrate, then let go`, {
             autoDismiss: 1000,
+            icon: Dumbbell,
           });
       }
     },
-    onOpen: () =>
-      notify('WebSocket connected', { variant: 'success', icon: Wifi }),
+    onError: () => {
+      dismissNotification(MSG_WEBSOCKET_CONNECTING);
+      notify(MSG_WEBSOCKET_ERROR, {
+        variant: 'error',
+        icon: Wifi,
+        autoDismiss: 10000,
+      });
+    },
   });
+
+  useEffect(() => {
+    if (readyState === WebSocket.CONNECTING) {
+      notify(MSG_WEBSOCKET_CONNECTING, {
+        variant: 'info',
+        icon: Wifi,
+        autoDismiss: 0,
+      });
+    } else if (readyState === WebSocket.OPEN) {
+      dismissNotification(MSG_WEBSOCKET_CONNECTING);
+      notify(MSG_WEBSOCKET_CONNECTED, { variant: 'success', icon: Wifi });
+    }
+  }, [readyState]);
 
   // --- Effects: Timers ---
   useEffect(() => {
@@ -344,7 +374,7 @@ export default function App() {
         </div>
 
         {/* Bottom Controls */}
-        <div className="absolute bottom-6 right-6 pointer-events-auto">
+        <div className="absolute bottom-6 right-6 pointer-events-auto z-23">
           <Controls
             onCompleteSet={() => handleCompleteSet(false)}
             onReset={handleReset}
@@ -368,8 +398,10 @@ export default function App() {
         onCalibrate={async () => {
           const response = await fetch('/calibrate');
           if (!response.ok) {
+            console.log(response);
             notify('Failed to send calibrate command', { variant: 'error' });
           } else {
+            console.log(response);
             notify('Calibration reset', { variant: 'info' });
           }
         }}

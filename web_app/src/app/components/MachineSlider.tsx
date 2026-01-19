@@ -47,12 +47,12 @@ const MachineSlider = forwardRef<HTMLDivElement, MachineSliderProps>(
 
         {/* 2. Animation Flash Overlay */}
         {animate && (
-          <div className="absolute w-full h-full rounded-3xl pointer-events-none z-[4] bg-white animate-[fadeOut_0.4s_ease-out] top-0" />
+          <div className="absolute w-full h-full rounded-3xl pointer-events-none bg-white z-21 animate-[fadeOut_0.4s_ease-out] top-0" />
         )}
 
         {/* 3. Active Fill Level */}
         <div
-          className={`absolute w-full transition-all rounded-b-3xl pointer-events-none z-5 ${fillColor} duration-100`}
+          className={`absolute w-full transition-all rounded-b-3xl pointer-events-none z-20 ${fillColor} duration-100`}
           style={{ height: `${position}%`, bottom: 0 }}
         />
 

@@ -457,12 +457,12 @@ void app_main(void) {
   }
 
   /* Wi-fi */
-  wifi_credentials_t wifi = config_get_wifi_credentials(config_cjson);
+  wifi_settings_t wifi = config_get_wifi_credentials(config_cjson);
   wifi_config_t wifi_config = {0};
   strncpy((char *) wifi_config.sta.ssid, wifi.ssid, sizeof(wifi_config.sta.ssid));
   strncpy((char *) wifi_config.sta.password, wifi.password, sizeof(wifi_config.sta.password));
 
-  init_wifi(wifi_config, "esp-lift.arpa");
+  init_wifi(wifi_config, wifi.hostname);
 
   /* HTTP Server */
   httpd_handle_t server = NULL;

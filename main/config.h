@@ -9,7 +9,8 @@ typedef enum { EXERCISE_SINGULAR, EXERCISE_ALTERNATING, EXERCISE_UNKNOWN } exerc
 typedef struct {
   const char *ssid;
   const char *password;
-} wifi_credentials_t;
+  const char *hostname;
+} wifi_settings_t;
 
 static const char *exercise_type_to_string(exercise_type_t type) {
   switch (type) {
@@ -190,8 +191,8 @@ int exercises_remove(cJSON *root, const char *name) {
   return 0;
 }
 
-wifi_credentials_t config_get_wifi_credentials(const cJSON *root) {
-  wifi_credentials_t creds = {NULL, NULL};
+wifi_settings_t config_get_wifi_credentials(const cJSON *root) {
+  wifi_settings_t creds = {NULL, NULL, NULL};
   if (!root)
     return creds;
 
@@ -201,6 +202,7 @@ wifi_credentials_t config_get_wifi_credentials(const cJSON *root) {
 
   const cJSON *ssid_item = cJSON_GetObjectItemCaseSensitive(wifi, "ssid");
   const cJSON *password_item = cJSON_GetObjectItemCaseSensitive(wifi, "password");
+  const cJSON *hostname_item = cJSON_GetObjectItemCaseSensitive(wifi, "hostname");
 
   if (cJSON_IsString(ssid_item) && ssid_item->valuestring != NULL) {
     creds.ssid = ssid_item->valuestring;
@@ -208,6 +210,10 @@ wifi_credentials_t config_get_wifi_credentials(const cJSON *root) {
 
   if (cJSON_IsString(password_item) && password_item->valuestring != NULL) {
     creds.password = password_item->valuestring;
+  }
+
+  if (cJSON_IsString(hostname_item) && hostname_item->valuestring != NULL) {
+    creds.hostname = hostname_item->valuestring;
   }
 
   return creds;
