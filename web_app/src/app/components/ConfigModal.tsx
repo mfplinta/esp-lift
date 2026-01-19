@@ -193,7 +193,7 @@ export default function ConfigModal({
               className={`py-2 px-4 rounded font-semibold border transition-all ${
                 theme === 'dark'
                   ? 'bg-white text-blue-600 border-blue-600 hover:bg-blue-100'
-                  : 'bg-white text-blue-600 border-blue-600 hover:bg-blue-100'
+                  : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-400'
               }`}
               style={{ display: 'inline-block', marginRight: '0.5rem' }}
             >
@@ -206,7 +206,7 @@ export default function ConfigModal({
               className={`py-2 px-4 rounded font-semibold border transition-all ${
                 theme === 'dark'
                   ? 'bg-white text-red-700 border-red-700 hover:bg-red-100'
-                  : 'bg-white text-red-700 border-red-700 hover:bg-red-100'
+                  : 'bg-red-700 text-white border-red-700 hover:bg-red-400'
               }`}
               style={{ display: 'inline-block' }}
             >

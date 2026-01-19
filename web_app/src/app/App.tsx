@@ -295,7 +295,7 @@ export default function App() {
         </button>
       </div>
 
-      <div className="absolute top-6 right-6 hidden sm:flex items-center gap-2 z-20 font-semibold text-2xl select-none">
+      <div className="absolute top-8 right-6 hidden sm:flex items-center gap-2 z-20 font-semibold text-2xl select-none">
         <Clock size={24} />{' '}
         {currentTime.toLocaleTimeString([], {
           hour: 'numeric',
@@ -305,7 +305,7 @@ export default function App() {
       </div>
 
       {/* --- Exercise Selector --- */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-xs sm:max-w-md flex justify-center">
+      <div className="absolute top-6 z-30 w-full">
         <ExerciseSelector
           exercises={exercises}
           selectedExercise={selectedExercise}

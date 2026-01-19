@@ -108,14 +108,12 @@ const SetHistory = forwardRef<SetHistoryHandle, SetHistoryProps>(
                 className={`p-3 rounded-lg border border-blue-500/30 ${cardColor}`}
               >
                 <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-blue-500">Resting...</span>
+                  <span className="font-bold text-blue-500">Rest</span>
                   <span className="text-xs opacity-50">Now</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock size={16} className={textColor} />
-                  <span className="font-mono text-lg">
-                    {formatTime(currentRestTime)}
-                  </span>
+                  <span className="text-lg">{formatTime(currentRestTime)}</span>
                 </div>
               </div>
             )}
@@ -129,7 +127,7 @@ const SetHistory = forwardRef<SetHistoryHandle, SetHistoryProps>(
                 <div className="flex justify-between items-start mb-1">
                   <div>
                     <span
-                      className={`font-bold ${record.setNumber === 0 ? 'text-green-500' : ''}`}
+                      className={`font-bold ${record.setNumber === 0 ? 'text-blue-500' : ''}`}
                     >
                       {record.setNumber === 0
                         ? 'Rest'
@@ -192,7 +190,7 @@ const SetHistory = forwardRef<SetHistoryHandle, SetHistoryProps>(
               Sets: {setCount}
             </div>
             <div
-              className="font-bold text-center whitespace-nowrap leading-none font-mono"
+              className="font-bold text-center whitespace-nowrap leading-none"
               style={{
                 // Scale font between 32px and 110px based on container width
                 fontSize: 'clamp(32px, calc(var(--card-w) * 0.22), 110px)',

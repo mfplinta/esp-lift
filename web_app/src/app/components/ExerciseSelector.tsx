@@ -63,14 +63,14 @@ export default function ExerciseSelector({
   };
 
   return (
-    <div ref={dropdownRef} className="relative">
+    <div ref={dropdownRef} className="flex flex-col sm:items-center items-end">
       {/* Trigger Button */}
       <button
         onClick={(e) => {
           e.stopPropagation(); // Prevent event bubbling
           setIsOpen(!isOpen);
         }}
-        className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all duration-200 w-full bg-opacity-90 ${
+        className={`flex items-center gap-2 px-4 py-3 rounded-lg transition-all duration-200 bg-opacity-90 ${
           theme === 'dark'
             ? 'hover:bg-gray-900 bg-gray-900'
             : 'hover:bg-gray-100 bg-white'
@@ -88,7 +88,7 @@ export default function ExerciseSelector({
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className={`sm:absolute top-0 left-0 sm:top-full mt-0 sm:mt-2 w-screen sm:w-64 max-h-screen sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-2xl overflow-hidden z-50 ${
+          className={`left-1/2 sm:-translate-x-1/2 sm:absolute top-0 left-0 sm:top-full mt-0 sm:mt-2 w-screen sm:w-64 max-h-screen sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-2xl overflow-hidden z-50 ${
             theme === 'dark'
               ? 'bg-gray-900 bg-opacity-95 backdrop-blur-md border-0 sm:border border-gray-700'
               : 'bg-white bg-opacity-95 backdrop-blur-md border-0 sm:border border-gray-300'

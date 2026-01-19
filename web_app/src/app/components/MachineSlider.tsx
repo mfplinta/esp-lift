@@ -58,7 +58,7 @@ const MachineSlider = forwardRef<HTMLDivElement, MachineSliderProps>(
 
         {/* 4. Draggable Threshold Line */}
         <div
-          className={`absolute w-full h-1 ${thresholdColor} cursor-grab active:cursor-grabbing z-20 shadow-lg`}
+          className={`absolute w-full h-5 ${thresholdColor} cursor-grab active:cursor-grabbing z-20 shadow-lg`}
           style={{ bottom: `${threshold}%`, transform: 'translateY(50%)' }}
           onMouseDown={onThresholdDragStart}
           onTouchStart={onThresholdDragStart}
