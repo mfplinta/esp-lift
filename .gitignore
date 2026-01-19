@@ -1,0 +1,13 @@
+.vscode
+# Nix
+.devenv
+.direnv
+.devenv.flake.nix
+# esp-idf
+build/
+managed_components/
+sdkconfig.old
+# React app
+web_app/node_modules
+web_app/dist
+web_app/cfg_partition/config.json

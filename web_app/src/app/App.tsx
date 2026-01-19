@@ -1,0 +1,388 @@
+import { useState, useEffect, useRef } from 'react';
+import { Sun, Moon, Settings, Clock, Wifi } from 'lucide-react';
+import MachineVisualizer from '@/app/components/MachineVisualizer';
+import StatsDisplay from '@/app/components/StatsDisplay';
+import Controls from '@/app/components/Controls';
+import ConfigModal from '@/app/components/ConfigModal';
+import ExerciseSelector, { Exercise } from '@/app/components/ExerciseSelector';
+import NotificationStack, {
+  NotificationConfig,
+  NotificationHandle,
+} from '@/app/components/NotificationStack';
+import SetHistory, { SetHistoryHandle } from './components/SetHistory';
+import useWebSocket from 'react-use-websocket-lite';
+
+export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [showConfig, setShowConfig] = useState(false);
+
+  // Refs
+  const notificationRef = useRef<NotificationHandle>(null);
+  const historyRef = useRef<SetHistoryHandle>(null);
+
+  // --- STATE: Machine Data ---
+  const [handlePosition, setHandlePosition] = useState(0);
+  const [handlePositionRight, setHandlePositionRight] = useState(0);
+  const [reps, setReps] = useState(0);
+  const [repsLeft, setRepsLeft] = useState(0);
+  const [repsRight, setRepsRight] = useState(0);
+
+  // --- STATE: Logic & Timing ---
+  const [sets, setSets] = useState(0);
+  const [activeTime, setActiveTime] = useState(0);
+  const [isResting, setIsResting] = useState(false);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+
+  // Rep detection state
+  const [thresholdPosition, setThresholdPosition] = useState(70);
+  const [lastCrossed, setLastCrossed] = useState(false);
+  const [lastCrossedRight, setLastCrossedRight] = useState(false);
+  const [lastMovementTime, setLastMovementTime] = useState(Date.now());
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // --- STATE: Configuration ---
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(
+    null
+  );
+  const [strictMode, setStrictMode] = useState(false);
+  const [autoSetCompletion, setAutoSetCompletion] = useState(false);
+  const [autoSetTimeout, setAutoSetTimeout] = useState(10);
+
+  // --- Helpers ---
+  const notify = (msg: string, opt?: Partial<NotificationConfig>) =>
+    notificationRef.current?.addNotification({ message: msg, ...opt });
+
+  // --- API exercises ---
+  const fetchExercises = async () => {
+    const response = await fetch('/exercises');
+    if (!response.ok) {
+      notify('Failed to fetch exercises', { variant: 'error' });
+    }
+    const data = await response.json();
+    setExercises(data.exercises);
+    if (data.length > 0) setSelectedExercise(data[0]);
+  };
+
+  const addExercise = async (exercise: Exercise) => {
+    const response = await fetch('/exercises', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(exercise),
+    });
+    if (!response.ok) {
+      notify('Failed to add exercise', { variant: 'error' });
+      return;
+    }
+  };
+
+  const deleteExercise = async (name: string) => {
+    const response = await fetch(
+      `/exercises?name=${encodeURIComponent(name)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    if (!response.ok) {
+      notify('Failed to delete exercise', { variant: 'error' });
+      return;
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      await fetchExercises();
+    })();
+  }, []);
+
+  // --- WebSocket ---
+  useWebSocket({
+    url: `ws://${window.location.href.split('/')[2]}/ws`,
+    onMessage: (e) => {
+      const data = JSON.parse(e.data);
+      const clamp = (v: number) => Math.min(Math.max(0, v), 100);
+
+      if (data.event === 'rotate') {
+        if (selectedExercise?.type === 'alternating' && data.name === 'right') {
+          setHandlePositionRight(
+            data.calibrated != null ? clamp(data.calibrated) : 0
+          );
+        } else if (
+          selectedExercise?.type === 'singular' ||
+          data.name === 'left'
+        ) {
+          setHandlePosition(
+            data.calibrated != null ? clamp(data.calibrated) : 0
+          );
+        }
+
+        if (data.calibrated == null)
+          notify(`Pull ${data.name} handle to calibrate`, {
+            autoDismiss: 1000,
+          });
+      }
+    },
+    onOpen: () =>
+      notify('WebSocket connected', { variant: 'success', icon: Wifi }),
+  });
+
+  // --- Effects: Timers ---
+  useEffect(() => {
+    // 1. Wall Clock
+    const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
+
+    // 2. Active Timer (Set OR Rest)
+    let activityInterval: any;
+    if (isTimerActive || isResting) {
+      activityInterval = setInterval(() => setActiveTime((t) => t + 0.1), 100);
+    }
+
+    // 3. Auto Set Completion
+    let autoCheckInterval: any;
+    if (autoSetCompletion && reps > 0 && !isResting) {
+      autoCheckInterval = setInterval(() => {
+        if ((Date.now() - lastMovementTime) / 1000 >= autoSetTimeout)
+          handleCompleteSet(true);
+      }, 1000);
+    }
+
+    return () => {
+      clearInterval(clockInterval);
+      clearInterval(activityInterval);
+      clearInterval(autoCheckInterval);
+    };
+  }, [isTimerActive, isResting, autoSetCompletion, reps, lastMovementTime]);
+
+  // --- Logic: Rep Counting ---
+  const processRep = (
+    pos: number,
+    lastState: boolean,
+    setLastState: (v: boolean) => void,
+    isRight: boolean
+  ) => {
+    const isAlternating = selectedExercise?.type === 'alternating';
+    const inc = isAlternating ? 0.5 : 1;
+
+    const triggerStart = strictMode ? pos > thresholdPosition : pos < 30;
+    const triggerEnd = strictMode ? pos <= thresholdPosition : pos > 70;
+
+    if (!lastState && triggerStart) {
+      setLastState(true);
+    } else if (lastState && triggerEnd) {
+      // Rep Completed
+      setReps((prev) => prev + inc);
+      if (isAlternating)
+        isRight ? setRepsRight((r) => r + 1) : setRepsLeft((l) => l + 1);
+      setLastState(false);
+      setLastMovementTime(Date.now());
+
+      if (isResting) {
+        historyRef.current?.addRecord({
+          setNumber: 0,
+          reps: 0,
+          duration: activeTime,
+          timestamp: Date.now(),
+          exerciseName: 'Rest',
+        });
+        setIsResting(false);
+        setActiveTime(0);
+      }
+
+      // Start set timer if not running
+      if (!isTimerActive) setIsTimerActive(true);
+    }
+  };
+
+  useEffect(
+    () => processRep(handlePosition, lastCrossed, setLastCrossed, false),
+    [handlePosition]
+  );
+  useEffect(() => {
+    if (selectedExercise?.type === 'alternating')
+      processRep(
+        handlePositionRight,
+        lastCrossedRight,
+        setLastCrossedRight,
+        true
+      );
+  }, [handlePositionRight]);
+
+  // --- Handlers ---
+  const handleCompleteSet = (autoSetTimedOut: boolean) => {
+    if (reps > 0) {
+      // Add SET to history
+      historyRef.current?.addRecord({
+        setNumber: sets + 1,
+        reps,
+        duration: activeTime,
+        timestamp: Date.now(),
+        exerciseName: selectedExercise?.name || 'Unknown',
+      });
+
+      // Reset Set Data
+      setSets((s) => s + 1);
+      setReps(0);
+      setRepsLeft(0);
+      setRepsRight(0);
+      setLastCrossed(false);
+      setLastCrossedRight(false);
+
+      // Switch to REST mode
+      setIsTimerActive(false);
+      setIsResting(true);
+      setActiveTime(autoSetTimedOut ? autoSetTimeout : 0); // Reset timer for the Rest
+    }
+  };
+
+  const handleReset = () => {
+    setReps(0);
+    setRepsLeft(0);
+    setRepsRight(0);
+    setSets(0);
+    setActiveTime(0);
+    setIsTimerActive(false);
+    setIsResting(false);
+    historyRef.current?.clearHistory();
+  };
+
+  return (
+    <div
+      className={`fixed inset-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}
+    >
+      {/* --- Top Bar --- */}
+      <div className="absolute top-6 left-6 flex gap-3 z-50">
+        <button
+          onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+          className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+        >
+          {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
+        </button>
+        <button
+          onClick={() => setShowConfig(true)}
+          className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+        >
+          <Settings size={24} />
+        </button>
+      </div>
+
+      <div className="absolute top-6 right-6 hidden sm:flex items-center gap-2 z-20 font-semibold text-2xl select-none">
+        <Clock size={24} />{' '}
+        {currentTime.toLocaleTimeString([], {
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+        })}
+      </div>
+
+      {/* --- Exercise Selector --- */}
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-xs sm:max-w-md flex justify-center">
+        <ExerciseSelector
+          exercises={exercises}
+          selectedExercise={selectedExercise}
+          onSelectExercise={setSelectedExercise}
+          theme={theme}
+          onAddExercise={async (n, t, type) => {
+            const ex: Exercise = {
+              name: n,
+              thresholdPercentage: t,
+              type,
+            };
+            await addExercise(ex);
+            await fetchExercises();
+          }}
+          onDeleteExercise={async (id) => {
+            await deleteExercise(id);
+            await fetchExercises();
+          }}
+        />
+      </div>
+
+      {/* --- Side Panel (History) --- */}
+      <SetHistory
+        ref={historyRef}
+        theme={theme}
+        isResting={isResting}
+        currentRestTime={isResting ? activeTime : 0}
+        currentSetTime={!isResting ? activeTime : 0}
+        setCount={sets}
+      />
+
+      {/* --- Main Content --- */}
+      <div className="fixed inset-0 flex flex-col items-center justify-center p-4 pointer-events-none mt-20">
+        {/* Stats Display (Center) */}
+        <div className="pointer-events-auto mb-4">
+          <StatsDisplay
+            label={isResting ? 'Resting' : 'Reps'}
+            value={isResting ? activeTime : reps}
+            theme={theme}
+            size="large"
+            isResting={isResting}
+            // If StatsDisplay expects restTime separately:
+            restTime={isResting ? activeTime : 0}
+          />
+        </div>
+
+        {/* Machine Visualizer */}
+        <div className="flex-1 w-full max-w-md pointer-events-auto min-h-0">
+          <MachineVisualizer
+            handlePosition={handlePosition}
+            handlePositionRight={
+              selectedExercise?.type === 'alternating'
+                ? handlePositionRight
+                : undefined
+            }
+            thresholdPosition={thresholdPosition}
+            onPositionChange={setHandlePosition}
+            onPositionRightChange={setHandlePositionRight}
+            onThresholdChange={setThresholdPosition}
+            theme={theme}
+            isAlternating={selectedExercise?.type === 'alternating'}
+            repsLeft={repsLeft}
+            repsRight={repsRight}
+            totalReps={reps}
+          />
+        </div>
+
+        {/* Bottom Controls */}
+        <div className="absolute bottom-6 right-6 pointer-events-auto">
+          <Controls
+            onCompleteSet={() => handleCompleteSet(false)}
+            onReset={handleReset}
+            theme={theme}
+            hasReps={reps > 0}
+          />
+        </div>
+      </div>
+
+      {/* --- Modals & Notifications --- */}
+      <ConfigModal
+        isOpen={showConfig}
+        onClose={() => setShowConfig(false)}
+        theme={theme}
+        strictMode={strictMode}
+        onStrictModeChange={setStrictMode}
+        autoSetCompletion={autoSetCompletion}
+        onAutoSetCompletionChange={setAutoSetCompletion}
+        autoSetTimeout={autoSetTimeout}
+        onAutoSetTimeoutChange={setAutoSetTimeout}
+        onCalibrate={async () => {
+          const response = await fetch('/calibrate');
+          if (!response.ok) {
+            notify('Failed to send calibrate command', { variant: 'error' });
+          } else {
+            notify('Calibration reset', { variant: 'info' });
+          }
+        }}
+        onRestart={async () => {
+          const response = await fetch('/restart');
+          if (!response.ok) {
+            notify('Failed to send restart command', { variant: 'error' });
+          } else {
+            notify('Restarting...', { variant: 'info' });
+          }
+        }}
+      />
+      <NotificationStack ref={notificationRef} theme={theme} />
+    </div>
+  );
+}
