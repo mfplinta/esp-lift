@@ -15,5 +15,9 @@
     "ssid": "YOUR_SSID_HERE",
     "password": "YOUR_PASSWORD_HERE",
     "hostname": "esp-lift.arpa"
+  },
+  "app": {
+    "strictMode": true,
+    "autoCompleteSecs": 10
   }
 }

@@ -2,34 +2,40 @@ import { X } from 'lucide-react';
 import { Switch } from '@/app/components/ui/switch';
 import { Label } from '@/app/components/ui/label';
 
+export interface Config {
+  strictMode: boolean;
+  autoCompleteSecs: number;
+}
+
 interface ConfigModalProps {
   isOpen: boolean;
-  onClose: () => void;
   theme: 'light' | 'dark';
-  strictMode: boolean;
-  onStrictModeChange: (value: boolean) => void;
-  autoSetCompletion: boolean;
-  onAutoSetCompletionChange: (value: boolean) => void;
-  autoSetTimeout: number;
-  onAutoSetTimeoutChange: (value: number) => void;
+  config: Config;
+  onClose: () => void;
+  onConfigChange: (newConfig: Config, autoSetEnabled: boolean) => void;
   onCalibrate?: () => void;
   onRestart?: () => void;
 }
 
 export default function ConfigModal({
   isOpen,
-  onClose,
   theme,
-  strictMode,
-  onStrictModeChange,
-  autoSetCompletion,
-  onAutoSetCompletionChange,
-  autoSetTimeout,
-  onAutoSetTimeoutChange,
+  config,
+  onClose,
+  onConfigChange,
   onCalibrate,
   onRestart,
 }: ConfigModalProps) {
   if (!isOpen) return null;
+
+  const autoCompleteEnabled = !!(
+    config.autoCompleteSecs && config.autoCompleteSecs !== 0
+  );
+
+  // Helper to update individual fields
+  const updateConfig = (key: keyof Config, value: any) => {
+    onConfigChange({ ...config, [key]: value }, autoCompleteEnabled);
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -96,8 +102,10 @@ export default function ConfigModal({
                 </div>
                 <Switch
                   id="strict-mode"
-                  checked={strictMode}
-                  onCheckedChange={onStrictModeChange}
+                  checked={config.strictMode}
+                  onCheckedChange={(checked) =>
+                    updateConfig('strictMode', checked)
+                  }
                   className="ml-4"
                 />
               </div>
@@ -120,17 +128,22 @@ export default function ConfigModal({
                 </div>
                 <Switch
                   id="auto-set"
-                  checked={autoSetCompletion}
-                  onCheckedChange={onAutoSetCompletionChange}
+                  checked={autoCompleteEnabled}
+                  onCheckedChange={(checked) =>
+                    updateConfig(
+                      'autoCompleteSecs',
+                      checked ? config.autoCompleteSecs || 10 : 0
+                    )
+                  }
                   className="ml-4"
                 />
               </div>
 
               {/* Timeout Setting */}
-              {autoSetCompletion && (
+              {autoCompleteEnabled && (
                 <div className="pt-2">
                   <Label htmlFor="timeout" className="text-sm font-medium">
-                    Inactivity Timeout: {autoSetTimeout}s
+                    Inactivity Timeout: {config.autoCompleteSecs}s
                   </Label>
                   <input
                     id="timeout"
@@ -138,9 +151,9 @@ export default function ConfigModal({
                     min="5"
                     max="60"
                     step="5"
-                    value={autoSetTimeout}
+                    value={config.autoCompleteSecs}
                     onChange={(e) =>
-                      onAutoSetTimeoutChange(Number(e.target.value))
+                      updateConfig('autoCompleteSecs', Number(e.target.value))
                     }
                     className={`w-full mt-2 h-2 rounded-lg appearance-none cursor-pointer ${
                       theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'

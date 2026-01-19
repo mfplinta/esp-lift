@@ -3,7 +3,7 @@ import { Sun, Moon, Settings, Clock, Wifi, Dumbbell } from 'lucide-react';
 import MachineVisualizer from '@/app/components/MachineVisualizer';
 import StatsDisplay from '@/app/components/StatsDisplay';
 import Controls from '@/app/components/Controls';
-import ConfigModal from '@/app/components/ConfigModal';
+import ConfigModal, { Config } from '@/app/components/ConfigModal';
 import ExerciseSelector, { Exercise } from '@/app/components/ExerciseSelector';
 import NotificationStack, {
   NotificationConfig,
@@ -11,6 +11,8 @@ import NotificationStack, {
 } from '@/app/components/NotificationStack';
 import SetHistory, { SetHistoryHandle } from './components/SetHistory';
 import useWebSocket from 'react-use-websocket-lite';
+import templateSettings from '../../cfg_partition/config.template.json';
+import WallClock from './components/WallClock';
 
 const MSG_WEBSOCKET_CONNECTING = 'WebSocket connecting...';
 const MSG_WEBSOCKET_CONNECTED = 'WebSocket connected';
@@ -45,13 +47,13 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // --- STATE: Configuration ---
+  const [config, setConfig] = useState<Config>(templateSettings.app);
+  const [autoCompleteEnabled, setAutoCompleteEnabled] = useState(false);
+
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(
     null
   );
-  const [strictMode, setStrictMode] = useState(false);
-  const [autoSetCompletion, setAutoSetCompletion] = useState(false);
-  const [autoSetTimeout, setAutoSetTimeout] = useState(10);
 
   // --- Helpers ---
   const notify = (msg: string, opt?: Partial<NotificationConfig>) =>
@@ -74,6 +76,23 @@ export default function App() {
       if (data.length > 0) setSelectedExercise(data[0]);
     } catch (e) {
       notify('Failed to fetch exercises', { variant: 'error' });
+    }
+  };
+
+  const fetchSettings = async () => {
+    try {
+      const response = await fetch('/cfg');
+      if (!response.ok) {
+        throw new Error(
+          { status: response.status, error: response.statusText }.toString()
+        );
+      }
+
+      const data = await response.json();
+      setConfig(data.app);
+      setAutoCompleteEnabled(data.app.autoCompleteSecs > 0);
+    } catch (e) {
+      notify('Failed to fetch settings', { variant: 'error' });
     }
   };
 
@@ -102,9 +121,22 @@ export default function App() {
     }
   };
 
+  const saveConfig = async (config: Partial<Config>) => {
+    const response = await fetch('/cfg', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app: config }),
+    });
+    if (!response.ok) {
+      notify('Failed to save settings', { variant: 'error' });
+      return;
+    }
+  };
+
   useEffect(() => {
     (async () => {
       await fetchExercises();
+      await fetchSettings();
     })();
   }, []);
 
@@ -158,30 +190,26 @@ export default function App() {
 
   // --- Effects: Timers ---
   useEffect(() => {
-    // 1. Wall Clock
-    const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
-
-    // 2. Active Timer (Set OR Rest)
+    // Active Timer (Set OR Rest)
     let activityInterval: any;
     if (isTimerActive || isResting) {
       activityInterval = setInterval(() => setActiveTime((t) => t + 0.1), 100);
     }
 
-    // 3. Auto Set Completion
+    // Auto Set Completion
     let autoCheckInterval: any;
-    if (autoSetCompletion && reps > 0 && !isResting) {
+    if (autoCompleteEnabled && reps > 0 && !isResting) {
       autoCheckInterval = setInterval(() => {
-        if ((Date.now() - lastMovementTime) / 1000 >= autoSetTimeout)
+        if ((Date.now() - lastMovementTime) / 1000 >= config.autoCompleteSecs)
           handleCompleteSet(true);
       }, 1000);
     }
 
     return () => {
-      clearInterval(clockInterval);
       clearInterval(activityInterval);
       clearInterval(autoCheckInterval);
     };
-  }, [isTimerActive, isResting, autoSetCompletion, reps, lastMovementTime]);
+  }, [isTimerActive, isResting, autoCompleteEnabled, reps, lastMovementTime]);
 
   // --- Logic: Rep Counting ---
   const processRep = (
@@ -193,8 +221,8 @@ export default function App() {
     const isAlternating = selectedExercise?.type === 'alternating';
     const inc = isAlternating ? 0.5 : 1;
 
-    const triggerStart = strictMode ? pos > thresholdPosition : pos < 30;
-    const triggerEnd = strictMode ? pos <= thresholdPosition : pos > 70;
+    const triggerStart = config.strictMode ? pos > thresholdPosition : pos < 30;
+    const triggerEnd = config.strictMode ? pos <= thresholdPosition : pos > 70;
 
     if (!lastState && triggerStart) {
       setLastState(true);
@@ -260,7 +288,7 @@ export default function App() {
       // Switch to REST mode
       setIsTimerActive(false);
       setIsResting(true);
-      setActiveTime(autoSetTimedOut ? autoSetTimeout : 0); // Reset timer for the Rest
+      setActiveTime(autoSetTimedOut ? config.autoCompleteSecs : 0); // Reset timer for the Rest
     }
   };
 
@@ -295,13 +323,8 @@ export default function App() {
         </button>
       </div>
 
-      <div className="absolute top-8 right-6 hidden sm:flex items-center gap-2 z-20 font-semibold text-2xl select-none">
-        <Clock size={24} />{' '}
-        {currentTime.toLocaleTimeString([], {
-          hour: 'numeric',
-          minute: '2-digit',
-          second: '2-digit',
-        })}
+      <div className="absolute top-8 right-6 hidden sm:flex z-20">
+        <WallClock />
       </div>
 
       {/* --- Exercise Selector --- */}
@@ -389,12 +412,13 @@ export default function App() {
         isOpen={showConfig}
         onClose={() => setShowConfig(false)}
         theme={theme}
-        strictMode={strictMode}
-        onStrictModeChange={setStrictMode}
-        autoSetCompletion={autoSetCompletion}
-        onAutoSetCompletionChange={setAutoSetCompletion}
-        autoSetTimeout={autoSetTimeout}
-        onAutoSetTimeoutChange={setAutoSetTimeout}
+        config={config}
+        onConfigChange={async (newConfig, autoSetEnabled) => {
+          setConfig(newConfig);
+          setAutoCompleteEnabled(autoSetEnabled);
+          await saveConfig(newConfig);
+          await fetchSettings();
+        }}
         onCalibrate={async () => {
           const response = await fetch('/calibrate');
           if (!response.ok) {

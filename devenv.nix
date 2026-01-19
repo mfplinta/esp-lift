@@ -11,6 +11,11 @@
   scripts.build.exec = ''
     (
       cd web_app
+      (
+        cd cfg_partition
+        [ -f config.json ] || cp config.template.json config.json
+      )
+      [ -d node_modules ] || npm i
       npx prettier --write .
       vite build
     )

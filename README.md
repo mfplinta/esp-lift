@@ -20,12 +20,7 @@ Next, make sure you have [devenv](https://devenv.sh/getting-started/) installed,
 ```sh
 devenv shell
 
-# Installs npm packages for web app
-cd web_app
-npm i
-
-# Builds, flashes, and opens serial monitor for ESP
-cd ..
+# Builds web app and ESP, flashes, and opens serial monitor
 build
 ```
 

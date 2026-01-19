@@ -12,6 +12,16 @@ typedef struct {
   const char *hostname;
 } wifi_settings_t;
 
+typedef struct {
+  bool strict_mode;
+  int auto_complete_secs;
+} app_settings_t;
+
+typedef struct {
+  wifi_settings_t wifi;
+  app_settings_t app;
+} config_settings_t;
+
 static const char *exercise_type_to_string(exercise_type_t type) {
   switch (type) {
   case EXERCISE_SINGULAR:
@@ -191,32 +201,40 @@ int exercises_remove(cJSON *root, const char *name) {
   return 0;
 }
 
-wifi_settings_t config_get_wifi_credentials(const cJSON *root) {
-  wifi_settings_t creds = {NULL, NULL, NULL};
-  if (!root)
-    return creds;
-
+int config_load_settings(cJSON *root, config_settings_t *settings) {
+  /* -------- WIFI -------- */
   const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(root, "wifi");
-  if (!cJSON_IsObject(wifi))
-    return creds;
+  if (cJSON_IsObject(wifi)) {
+    const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(wifi, "ssid");
+    const cJSON *password = cJSON_GetObjectItemCaseSensitive(wifi, "password");
+    const cJSON *hostname = cJSON_GetObjectItemCaseSensitive(wifi, "hostname");
 
-  const cJSON *ssid_item = cJSON_GetObjectItemCaseSensitive(wifi, "ssid");
-  const cJSON *password_item = cJSON_GetObjectItemCaseSensitive(wifi, "password");
-  const cJSON *hostname_item = cJSON_GetObjectItemCaseSensitive(wifi, "hostname");
+    settings->wifi.ssid = cJSON_IsString(ssid) ? ssid->valuestring : NULL;
 
-  if (cJSON_IsString(ssid_item) && ssid_item->valuestring != NULL) {
-    creds.ssid = ssid_item->valuestring;
+    settings->wifi.password = cJSON_IsString(password) ? password->valuestring : NULL;
+
+    settings->wifi.hostname = cJSON_IsString(hostname) ? hostname->valuestring : NULL;
+  } else {
+    settings->wifi.ssid = NULL;
+    settings->wifi.password = NULL;
+    settings->wifi.hostname = NULL;
   }
 
-  if (cJSON_IsString(password_item) && password_item->valuestring != NULL) {
-    creds.password = password_item->valuestring;
+  /* -------- APP -------- */
+  const cJSON *app = cJSON_GetObjectItemCaseSensitive(root, "app");
+  if (cJSON_IsObject(app)) {
+    const cJSON *strict = cJSON_GetObjectItemCaseSensitive(app, "strictMode");
+    const cJSON *auto_complete = cJSON_GetObjectItemCaseSensitive(app, "autoCompleteSecs");
+
+    settings->app.strict_mode = cJSON_IsBool(strict) ? cJSON_IsTrue(strict) : false;
+
+    settings->app.auto_complete_secs = cJSON_IsNumber(auto_complete) ? auto_complete->valueint : 0;
+  } else {
+    settings->app.strict_mode = false;
+    settings->app.auto_complete_secs = 0;
   }
 
-  if (cJSON_IsString(hostname_item) && hostname_item->valuestring != NULL) {
-    creds.hostname = hostname_item->valuestring;
-  }
-
-  return creds;
+  return 1;
 }
 
 #endif

@@ -268,6 +268,115 @@ cleanup:
   return res;
 }
 
+static cJSON *clone_get_config(const cJSON *root) {
+  cJSON *clone = cJSON_Duplicate(root, 1);
+  if (!clone)
+    return NULL;
+
+  cJSON_DeleteItemFromObject(clone, "exercises");
+  cJSON_DeleteItemFromObject(clone, "wifi");
+  return clone;
+}
+
+static esp_err_t cfg_get_handler(httpd_req_t *req) {
+  ESP_LOGI("HTTP_API", "GET: %s", req->uri);
+
+  cJSON *root = (cJSON *) req->user_ctx;
+
+  cJSON *filtered = clone_get_config(root);
+  if (!filtered) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON clone failed");
+    return ESP_FAIL;
+  }
+
+  char *json = cJSON_PrintUnformatted(filtered);
+  cJSON_Delete(filtered);
+
+  if (!json) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON print failed");
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+
+  free(json);
+  return ESP_OK;
+}
+
+static esp_err_t cfg_post_handler(httpd_req_t *req) {
+  ESP_LOGI("HTTP_API", "POST: %s", req->uri);
+
+  cJSON *root = (cJSON *) req->user_ctx;
+  if (!root) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Config not loaded");
+    return ESP_FAIL;
+  }
+
+  char *body = httpd_read_body(req);
+  if (!body) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to read body");
+    return ESP_FAIL;
+  }
+
+  cJSON *patch = cJSON_Parse(body);
+  free(body);
+
+  if (!patch) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    return ESP_FAIL;
+  }
+
+  /* -------- WIFI -------- */
+  const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(patch, "wifi");
+  if (cJSON_IsObject(wifi)) {
+    cJSON *dst = cJSON_GetObjectItem(root, "wifi");
+    if (!dst) {
+      dst = cJSON_CreateObject();
+      cJSON_AddItemToObject(root, "wifi", dst);
+    }
+
+    cJSON *item;
+    if ((item = cJSON_GetObjectItem(wifi, "ssid")))
+      cJSON_ReplaceItemInObject(dst, "ssid", cJSON_Duplicate(item, 1));
+
+    if ((item = cJSON_GetObjectItem(wifi, "password")))
+      cJSON_ReplaceItemInObject(dst, "password", cJSON_Duplicate(item, 1));
+
+    if ((item = cJSON_GetObjectItem(wifi, "hostname")))
+      cJSON_ReplaceItemInObject(dst, "hostname", cJSON_Duplicate(item, 1));
+  }
+
+  /* -------- APP -------- */
+  const cJSON *app = cJSON_GetObjectItemCaseSensitive(patch, "app");
+  if (cJSON_IsObject(app)) {
+    cJSON *dst = cJSON_GetObjectItem(root, "app");
+    if (!dst) {
+      dst = cJSON_CreateObject();
+      cJSON_AddItemToObject(root, "app", dst);
+    }
+
+    cJSON *item;
+    if ((item = cJSON_GetObjectItem(app, "strictMode")))
+      cJSON_ReplaceItemInObject(dst, "strictMode", cJSON_Duplicate(item, 1));
+
+    if ((item = cJSON_GetObjectItem(app, "autoCompleteSecs")))
+      cJSON_ReplaceItemInObject(dst, "autoCompleteSecs", cJSON_Duplicate(item, 1));
+  }
+
+  /* Persist */
+  if (!exercises_save_to_file(root, "/cfg/config.json")) {
+    ESP_LOGE("CONFIG", "Failed to save config");
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Save failed");
+    cJSON_Delete(patch);
+    return ESP_FAIL;
+  }
+
+  cJSON_Delete(patch);
+  httpd_resp_sendstr(req, "OK");
+  return ESP_OK;
+}
+
 void url_decode(char *dst, const char *src) {
   char a, b;
   while (*src) {
@@ -456,13 +565,15 @@ void app_main(void) {
     abort();
   }
 
-  /* Wi-fi */
-  wifi_settings_t wifi = config_get_wifi_credentials(config_cjson);
-  wifi_config_t wifi_config = {0};
-  strncpy((char *) wifi_config.sta.ssid, wifi.ssid, sizeof(wifi_config.sta.ssid));
-  strncpy((char *) wifi_config.sta.password, wifi.password, sizeof(wifi_config.sta.password));
+  config_settings_t settings;
+  config_load_settings(config_cjson, &settings);
 
-  init_wifi(wifi_config, wifi.hostname);
+  /* Wifi */
+  wifi_config_t wifi_config = {0};
+  strncpy((char *) wifi_config.sta.ssid, settings.wifi.ssid, sizeof(wifi_config.sta.ssid));
+  strncpy((char *) wifi_config.sta.password, settings.wifi.password,
+          sizeof(wifi_config.sta.password));
+  init_wifi(wifi_config, settings.wifi.hostname);
 
   /* HTTP Server */
   httpd_handle_t server = NULL;
@@ -471,8 +582,8 @@ void app_main(void) {
   config.uri_match_fn = httpd_uri_match_wildcard;
   config.close_fn = client_close_handler;
   config.lru_purge_enable = true;
-  config.max_open_sockets = 10;
   config.keep_alive_enable = true;
+  config.max_uri_handlers = 9;
 
   ESP_ERROR_CHECK(httpd_start(&server, &config));
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/ws",
@@ -505,6 +616,18 @@ void app_main(void) {
     httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/exercises",
                                                        .method = HTTP_DELETE,
                                                        .handler = delete_exercises_handler,
+                                                       .user_ctx = (void *) config_cjson}));
+
+  ESP_ERROR_CHECK(
+    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/cfg",
+                                                       .method = HTTP_GET,
+                                                       .handler = cfg_get_handler,
+                                                       .user_ctx = (void *) config_cjson}));
+
+  ESP_ERROR_CHECK(
+    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/cfg",
+                                                       .method = HTTP_POST,
+                                                       .handler = cfg_post_handler,
                                                        .user_ctx = (void *) config_cjson}));
 
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "*",
