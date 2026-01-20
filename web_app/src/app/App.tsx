@@ -44,7 +44,6 @@ export default function App() {
   const [lastCrossed, setLastCrossed] = useState(false);
   const [lastCrossedRight, setLastCrossedRight] = useState(false);
   const [lastMovementTime, setLastMovementTime] = useState(Date.now());
-  const [currentTime, setCurrentTime] = useState(new Date());
 
   // --- STATE: Configuration ---
   const [config, setConfig] = useState<Config>(templateSettings.app);
