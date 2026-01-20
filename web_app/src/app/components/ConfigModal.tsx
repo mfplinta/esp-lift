@@ -190,14 +190,14 @@ export default function ConfigModal({
             }`}
           />
 
-          {/* Advanced Section */}
+          {/* Hardware Section */}
           <div className="space-y-4">
             <h3
               className={`text-lg font-bold ${
                 theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
               }`}
             >
-              Advanced
+              Hardware
             </h3>
 
             {/* Calibrate Button */}

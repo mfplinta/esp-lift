@@ -8,8 +8,9 @@
 ESP32-based rep counter for cable machines.
 
 - Hosts its own web application and communicate via WebSockets with it for live updates.
-- Supports adding custom exercises with persistence in memory.
+- Supports adding custom exercises with persistence in the device.
 - Calibrates with a simple cable pull across the machine's range-of-motion.
+- Stores workout history in the browser's local storage, with support for exporting.
 
 ## How to build
 
@@ -41,16 +42,19 @@ flowchart TB
         API["/exercises (GET, POST, DELETE)"]
         n2["React app<br>/app"]
         n3["Settings<br>/cfg"]
+        n4["/settings (POST)"]
   end
     Encoders -- "real-time" --> EventQueue
     EventQueue -- "real-time" --> Websockets
     Browser["Browser"] -- "real-time" --- Websockets
-    Browser -- HTTP --> API & FileServer
+    Browser -- HTTP --> API & FileServer & n4
     FileServer -- <br> --> n2
     API --> n3
+    n4 --> n3
 
     n2@{ shape: disk}
     n3@{ shape: disk}
+    n4@{ shape: rect}
     Browser@{ shape: terminal}
      Encoders:::encoder
      Encoders:::encoder

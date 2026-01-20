@@ -268,43 +268,7 @@ cleanup:
   return res;
 }
 
-static cJSON *clone_get_config(const cJSON *root) {
-  cJSON *clone = cJSON_Duplicate(root, 1);
-  if (!clone)
-    return NULL;
-
-  cJSON_DeleteItemFromObject(clone, "exercises");
-  cJSON_DeleteItemFromObject(clone, "wifi");
-  return clone;
-}
-
-static esp_err_t cfg_get_handler(httpd_req_t *req) {
-  ESP_LOGI("HTTP_API", "GET: %s", req->uri);
-
-  cJSON *root = (cJSON *) req->user_ctx;
-
-  cJSON *filtered = clone_get_config(root);
-  if (!filtered) {
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON clone failed");
-    return ESP_FAIL;
-  }
-
-  char *json = cJSON_PrintUnformatted(filtered);
-  cJSON_Delete(filtered);
-
-  if (!json) {
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON print failed");
-    return ESP_FAIL;
-  }
-
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
-
-  free(json);
-  return ESP_OK;
-}
-
-static esp_err_t cfg_post_handler(httpd_req_t *req) {
+static esp_err_t post_settings_handler(httpd_req_t *req) {
   ESP_LOGI("HTTP_API", "POST: %s", req->uri);
 
   cJSON *root = (cJSON *) req->user_ctx;
@@ -345,23 +309,6 @@ static esp_err_t cfg_post_handler(httpd_req_t *req) {
 
     if ((item = cJSON_GetObjectItem(wifi, "hostname")))
       cJSON_ReplaceItemInObject(dst, "hostname", cJSON_Duplicate(item, 1));
-  }
-
-  /* -------- APP -------- */
-  const cJSON *app = cJSON_GetObjectItemCaseSensitive(patch, "app");
-  if (cJSON_IsObject(app)) {
-    cJSON *dst = cJSON_GetObjectItem(root, "app");
-    if (!dst) {
-      dst = cJSON_CreateObject();
-      cJSON_AddItemToObject(root, "app", dst);
-    }
-
-    cJSON *item;
-    if ((item = cJSON_GetObjectItem(app, "strictMode")))
-      cJSON_ReplaceItemInObject(dst, "strictMode", cJSON_Duplicate(item, 1));
-
-    if ((item = cJSON_GetObjectItem(app, "autoCompleteSecs")))
-      cJSON_ReplaceItemInObject(dst, "autoCompleteSecs", cJSON_Duplicate(item, 1));
   }
 
   /* Persist */
@@ -565,15 +512,14 @@ void app_main(void) {
     abort();
   }
 
-  config_settings_t settings;
+  settings_t settings;
   config_load_settings(config_cjson, &settings);
 
   /* Wifi */
   wifi_config_t wifi_config = {0};
-  strncpy((char *) wifi_config.sta.ssid, settings.wifi.ssid, sizeof(wifi_config.sta.ssid));
-  strncpy((char *) wifi_config.sta.password, settings.wifi.password,
-          sizeof(wifi_config.sta.password));
-  init_wifi(wifi_config, settings.wifi.hostname);
+  strncpy((char *) wifi_config.sta.ssid, settings.ssid, sizeof(wifi_config.sta.ssid));
+  strncpy((char *) wifi_config.sta.password, settings.password, sizeof(wifi_config.sta.password));
+  init_wifi(wifi_config, settings.hostname);
 
   /* HTTP Server */
   httpd_handle_t server = NULL;
@@ -619,15 +565,9 @@ void app_main(void) {
                                                        .user_ctx = (void *) config_cjson}));
 
   ESP_ERROR_CHECK(
-    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/cfg",
-                                                       .method = HTTP_GET,
-                                                       .handler = cfg_get_handler,
-                                                       .user_ctx = (void *) config_cjson}));
-
-  ESP_ERROR_CHECK(
-    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/cfg",
+    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/settings",
                                                        .method = HTTP_POST,
-                                                       .handler = cfg_post_handler,
+                                                       .handler = post_settings_handler,
                                                        .user_ctx = (void *) config_cjson}));
 
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "*",
@@ -640,6 +580,6 @@ void app_main(void) {
   xTaskCreate(input_task, "input_task", 4096, NULL, tskIDLE_PRIORITY, NULL);
 
   while (1) {
-    vTaskDelay(pdMS_TO_TICKS(100) / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }

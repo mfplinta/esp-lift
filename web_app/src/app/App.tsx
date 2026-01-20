@@ -11,20 +11,30 @@ import NotificationStack, {
 } from '@/app/components/NotificationStack';
 import SetHistory, { SetHistoryHandle } from './components/SetHistory';
 import useWebSocket from 'react-use-websocket-lite';
-import templateSettings from '../../cfg_partition/config.template.json';
 import WallClock from './components/WallClock';
 
-const MSG_WEBSOCKET_CONNECTING = 'WebSocket connecting...';
-const MSG_WEBSOCKET_CONNECTED = 'WebSocket connected';
-const MSG_WEBSOCKET_ERROR = 'Error connecting WebSocket';
+const MSG_WEBSOCKET_CONNECTING = 'Connecting...';
+const MSG_WEBSOCKET_CONNECTED = 'Connected';
+const MSG_WEBSOCKET_ERROR = 'Error connecting to device';
 
 export default function App() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [showConfig, setShowConfig] = useState(false);
 
   // Refs
   const notificationRef = useRef<NotificationHandle>(null);
   const historyRef = useRef<SetHistoryHandle>(null);
+
+  // --- THEME  ---
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
+      if (savedTheme) return savedTheme;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
+    }
+    return 'light';
+  });
 
   // --- STATE: Machine Data ---
   const [handlePosition, setHandlePosition] = useState(0);
@@ -46,7 +56,10 @@ export default function App() {
   const [lastMovementTime, setLastMovementTime] = useState(Date.now());
 
   // --- STATE: Configuration ---
-  const [config, setConfig] = useState<Config>(templateSettings.app);
+  const [config, setConfig] = useState<Config>({
+    strictMode: false,
+    autoCompleteSecs: 0,
+  });
   const [autoCompleteEnabled, setAutoCompleteEnabled] = useState(false);
 
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -78,20 +91,16 @@ export default function App() {
     }
   };
 
-  const fetchSettings = async () => {
+  const fetchSettings = () => {
     try {
-      const response = await fetch('/cfg');
-      if (!response.ok) {
-        throw new Error(
-          { status: response.status, error: response.statusText }.toString()
-        );
+      const savedConfig = localStorage.getItem('app_settings');
+      if (savedConfig) {
+        const data = JSON.parse(savedConfig);
+        setConfig(data);
+        setAutoCompleteEnabled(data.autoCompleteSecs > 0);
       }
-
-      const data = await response.json();
-      setConfig(data.app);
-      setAutoCompleteEnabled(data.app.autoCompleteSecs > 0);
     } catch (e) {
-      notify('Failed to fetch settings', { variant: 'error' });
+      notify('Failed to load settings from storage', { variant: 'error' });
     }
   };
 
@@ -120,22 +129,25 @@ export default function App() {
     }
   };
 
-  const saveConfig = async (config: Partial<Config>) => {
-    const response = await fetch('/cfg', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app: config }),
-    });
-    if (!response.ok) {
-      notify('Failed to save settings', { variant: 'error' });
-      return;
+  const saveConfig = (newConfig: Partial<Config>) => {
+    try {
+      const fullConfig = { ...config, ...newConfig };
+      localStorage.setItem('app_settings', JSON.stringify(fullConfig));
+    } catch (e) {
+      notify('Failed to save settings to storage', { variant: 'error' });
     }
+  };
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
   };
 
   useEffect(() => {
     (async () => {
       await fetchExercises();
-      await fetchSettings();
+      fetchSettings();
     })();
   }, []);
 
@@ -309,7 +321,7 @@ export default function App() {
       {/* --- Top Bar --- */}
       <div className="absolute top-6 left-6 flex gap-3 z-50">
         <button
-          onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+          onClick={toggleTheme}
           className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
         >
           {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
@@ -412,11 +424,10 @@ export default function App() {
         onClose={() => setShowConfig(false)}
         theme={theme}
         config={config}
-        onConfigChange={async (newConfig, autoSetEnabled) => {
+        onConfigChange={(newConfig, autoSetEnabled) => {
           setConfig(newConfig);
           setAutoCompleteEnabled(autoSetEnabled);
-          await saveConfig(newConfig);
-          await fetchSettings();
+          saveConfig(newConfig);
         }}
         onCalibrate={async () => {
           const response = await fetch('/calibrate');

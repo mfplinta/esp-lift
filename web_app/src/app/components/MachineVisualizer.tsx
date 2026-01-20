@@ -78,7 +78,7 @@ export default function MachineVisualizer({
 
   // --- Drag Logic ---
 
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+  const handleDragStart = (e: React.PointerEvent | PointerEvent) => {
     e.stopPropagation();
     setIsDraggingThreshold(true);
   };

@@ -10,17 +10,7 @@ typedef struct {
   const char *ssid;
   const char *password;
   const char *hostname;
-} wifi_settings_t;
-
-typedef struct {
-  bool strict_mode;
-  int auto_complete_secs;
-} app_settings_t;
-
-typedef struct {
-  wifi_settings_t wifi;
-  app_settings_t app;
-} config_settings_t;
+} settings_t;
 
 static const char *exercise_type_to_string(exercise_type_t type) {
   switch (type) {
@@ -57,9 +47,9 @@ cJSON *exercises_create_root(void) {
   return root;
 }
 
-char *read_file_to_string(const char *path) {
+cJSON *exercises_load_from_file(const char *path) {
   FILE *file = fopen(path, "rb");
-  char *buffer = NULL;
+  char *json_string = NULL;
   long length = 0;
 
   if (file == NULL) {
@@ -70,25 +60,21 @@ char *read_file_to_string(const char *path) {
   length = ftell(file);
   rewind(file);
 
-  buffer = malloc(length + 1);
-  if (buffer == NULL) {
+  json_string = malloc(length + 1);
+  if (json_string == NULL) {
     fclose(file);
     return NULL;
   }
 
-  if (fread(buffer, 1, length, file) != (size_t) length) {
+  if (fread(json_string, 1, length, file) != (size_t) length) {
     fclose(file);
-    free(buffer);
+    free(json_string);
     return NULL;
   }
 
-  buffer[length] = '\0';
+  json_string[length] = '\0';
   fclose(file);
-  return buffer;
-}
 
-cJSON *exercises_load_from_file(const char *path) {
-  char *json_string = read_file_to_string(path);
   if (json_string == NULL) {
     return NULL;
   }
@@ -201,37 +187,22 @@ int exercises_remove(cJSON *root, const char *name) {
   return 0;
 }
 
-int config_load_settings(cJSON *root, config_settings_t *settings) {
-  /* -------- WIFI -------- */
+int config_load_settings(cJSON *root, settings_t *settings) {
   const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(root, "wifi");
   if (cJSON_IsObject(wifi)) {
     const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(wifi, "ssid");
     const cJSON *password = cJSON_GetObjectItemCaseSensitive(wifi, "password");
     const cJSON *hostname = cJSON_GetObjectItemCaseSensitive(wifi, "hostname");
 
-    settings->wifi.ssid = cJSON_IsString(ssid) ? ssid->valuestring : NULL;
+    settings->ssid = cJSON_IsString(ssid) ? ssid->valuestring : NULL;
 
-    settings->wifi.password = cJSON_IsString(password) ? password->valuestring : NULL;
+    settings->password = cJSON_IsString(password) ? password->valuestring : NULL;
 
-    settings->wifi.hostname = cJSON_IsString(hostname) ? hostname->valuestring : NULL;
+    settings->hostname = cJSON_IsString(hostname) ? hostname->valuestring : NULL;
   } else {
-    settings->wifi.ssid = NULL;
-    settings->wifi.password = NULL;
-    settings->wifi.hostname = NULL;
-  }
-
-  /* -------- APP -------- */
-  const cJSON *app = cJSON_GetObjectItemCaseSensitive(root, "app");
-  if (cJSON_IsObject(app)) {
-    const cJSON *strict = cJSON_GetObjectItemCaseSensitive(app, "strictMode");
-    const cJSON *auto_complete = cJSON_GetObjectItemCaseSensitive(app, "autoCompleteSecs");
-
-    settings->app.strict_mode = cJSON_IsBool(strict) ? cJSON_IsTrue(strict) : false;
-
-    settings->app.auto_complete_secs = cJSON_IsNumber(auto_complete) ? auto_complete->valueint : 0;
-  } else {
-    settings->app.strict_mode = false;
-    settings->app.auto_complete_secs = 0;
+    settings->ssid = NULL;
+    settings->password = NULL;
+    settings->hostname = NULL;
   }
 
   return 1;
