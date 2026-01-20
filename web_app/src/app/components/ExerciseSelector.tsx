@@ -63,7 +63,7 @@ export default function ExerciseSelector({
   };
 
   return (
-    <div ref={dropdownRef} className="flex flex-col sm:items-center items-end">
+    <div ref={dropdownRef} className="flex flex-col items-end sm:items-center">
       {/* Trigger Button */}
       <button
         onClick={(e) => {
@@ -88,25 +88,12 @@ export default function ExerciseSelector({
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className={`left-1/2 sm:-translate-x-1/2 sm:absolute top-0 left-0 sm:top-full mt-0 sm:mt-2 w-screen sm:w-64 max-h-screen sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-2xl overflow-hidden z-50 ${
+          className={`absolute left-0 right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-2 w-full sm:w-64 max-h-[80vh] rounded-xl shadow-2xl overflow-hidden z-50 backdrop-blur-md ${
             theme === 'dark'
-              ? 'bg-gray-900 bg-opacity-95 backdrop-blur-md border-0 sm:border border-gray-700'
-              : 'bg-white bg-opacity-95 backdrop-blur-md border-0 sm:border border-gray-300'
+              ? 'bg-gray-900 bg-opacity-95 border border-gray-700'
+              : 'bg-white bg-opacity-95 border border-gray-300'
           }`}
         >
-          {/* Close button for mobile - hidden on desktop */}
-          <div className="sm:hidden flex items-center justify-between p-4 border-b border-gray-700">
-            <span className="font-semibold text-lg">Select Exercise</span>
-            <button
-              onClick={() => setIsOpen(false)}
-              className={`p-2 rounded-lg ${
-                theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
-              }`}
-            >
-              <X size={20} />
-            </button>
-          </div>
-
           {/* Rest of your existing dropdown content stays exactly the same */}
           <div className="max-h-[calc(100vh-120px)] sm:max-h-80 overflow-y-auto">
             {exercises.map((exercise) => (

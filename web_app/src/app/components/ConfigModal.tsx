@@ -1,6 +1,7 @@
-import { X } from 'lucide-react';
+import { ChevronDown, Wifi, X } from 'lucide-react';
 import { Switch } from '@/app/components/ui/switch';
 import { Label } from '@/app/components/ui/label';
+import { useState } from 'react';
 
 export interface Config {
   strictMode: boolean;
@@ -15,6 +16,7 @@ interface ConfigModalProps {
   onConfigChange: (newConfig: Config, autoSetEnabled: boolean) => void;
   onCalibrate?: () => void;
   onRestart?: () => void;
+  onWifiChange?: (ssid: string, password: string) => void;
 }
 
 export default function ConfigModal({
@@ -25,12 +27,17 @@ export default function ConfigModal({
   onConfigChange,
   onCalibrate,
   onRestart,
+  onWifiChange,
 }: ConfigModalProps) {
   if (!isOpen) return null;
 
   const autoCompleteEnabled = !!(
     config.autoCompleteSecs && config.autoCompleteSecs !== 0
   );
+
+  const [wifiOpen, setWifiOpen] = useState(false);
+  const [wifiSSID, setWifiSSID] = useState('');
+  const [wifiPassword, setWifiPassword] = useState('');
 
   // Helper to update individual fields
   const updateConfig = (key: keyof Config, value: any) => {
@@ -157,7 +164,15 @@ export default function ConfigModal({
                     }
                     className={`w-full mt-2 h-2 rounded-lg appearance-none cursor-pointer ${
                       theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'
-                    }`}
+                    } [&::-webkit-slider-thumb]:appearance-none
+                      [&::-webkit-slider-thumb]:h-4
+                      [&::-webkit-slider-thumb]:w-4
+                      [&::-webkit-slider-thumb]:rounded-full
+                      [&::-webkit-slider-thumb]:bg-current
+                      [&::-webkit-slider-thumb]:transition-transform
+                      [&::-webkit-slider-thumb]:duration-150
+                      active:[&::-webkit-slider-thumb]:scale-125
+                      `}
                     style={{
                       accentColor: theme === 'dark' ? '#ffffff' : '#000000',
                     }}
@@ -225,6 +240,86 @@ export default function ConfigModal({
             >
               Restart
             </button>
+          </div>
+
+          {/* WiFi Settings */}
+          <div className="space-y-2">
+            <button
+              onClick={() => setWifiOpen((v) => !v)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${
+                theme === 'dark'
+                  ? 'border-gray-700 hover:bg-gray-800'
+                  : 'border-gray-300 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Wifi size={18} />
+                <span className="font-semibold">Wi-Fi Settings</span>
+              </div>
+              <ChevronDown
+                size={18}
+                className={`transition-transform ${
+                  wifiOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {wifiOpen && (
+              <div
+                className={`p-4 rounded-xl border shadow-inner space-y-4 ${
+                  theme === 'dark'
+                    ? 'bg-gray-800 border-gray-700'
+                    : 'bg-gray-50 border-gray-300'
+                }`}
+              >
+                {/* SSID */}
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Wi-Fi SSID</Label>
+                  <input
+                    type="text"
+                    placeholder="Enter network name"
+                    value={wifiSSID}
+                    onChange={(e) => setWifiSSID(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg border text-sm ${
+                      theme === 'dark'
+                        ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500'
+                        : 'bg-white border-gray-300 text-black placeholder-gray-400'
+                    }`}
+                  />
+                </div>
+
+                {/* Password */}
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Password</Label>
+                  <input
+                    type="password"
+                    placeholder="Enter password"
+                    value={wifiPassword}
+                    onChange={(e) => setWifiPassword(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg border text-sm ${
+                      theme === 'dark'
+                        ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500'
+                        : 'bg-white border-gray-300 text-black placeholder-gray-400'
+                    }`}
+                  />
+                </div>
+
+                {/* Apply */}
+                <button
+                  onClick={() => {
+                    setWifiOpen(false);
+                    onWifiChange && onWifiChange(wifiSSID, wifiPassword);
+                  }}
+                  className={`w-full py-2 rounded-lg font-semibold transition-all ${
+                    theme === 'dark'
+                      ? 'bg-white text-black hover:bg-gray-200'
+                      : 'bg-black text-white hover:bg-gray-800'
+                  }`}
+                >
+                  Apply Wi-Fi Settings
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

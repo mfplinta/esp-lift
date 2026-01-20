@@ -91,19 +91,6 @@ export default function App() {
     }
   };
 
-  const fetchSettings = () => {
-    try {
-      const savedConfig = localStorage.getItem('app_settings');
-      if (savedConfig) {
-        const data = JSON.parse(savedConfig);
-        setConfig(data);
-        setAutoCompleteEnabled(data.autoCompleteSecs > 0);
-      }
-    } catch (e) {
-      notify('Failed to load settings from storage', { variant: 'error' });
-    }
-  };
-
   const addExercise = async (exercise: Exercise) => {
     const response = await fetch('/exercises', {
       method: 'POST',
@@ -129,12 +116,67 @@ export default function App() {
     }
   };
 
+  const loadConfig = () => {
+    try {
+      const savedConfig = localStorage.getItem('app_settings');
+      if (savedConfig) {
+        const data = JSON.parse(savedConfig);
+        setConfig(data);
+        setAutoCompleteEnabled(data.autoCompleteSecs > 0);
+      }
+    } catch (e) {
+      notify('Failed to load settings from storage', { variant: 'error' });
+    }
+  };
+
   const saveConfig = (newConfig: Partial<Config>) => {
     try {
       const fullConfig = { ...config, ...newConfig };
       localStorage.setItem('app_settings', JSON.stringify(fullConfig));
     } catch (e) {
       notify('Failed to save settings to storage', { variant: 'error' });
+    }
+  };
+
+  const sendCalibrateCommand = async () => {
+    const response = await fetch('/calibrate');
+    if (!response.ok) {
+      notify('Failed to send calibrate command', { variant: 'error' });
+    } else {
+      notify('Calibration reset', { variant: 'info' });
+    }
+  };
+
+  const sendRestartCommand = async () => {
+    const response = await fetch('/restart');
+    if (!response.ok) {
+      notify('Failed to send restart command', { variant: 'error' });
+    } else {
+      notify('Restarting...', { variant: 'info' });
+    }
+  };
+
+  const changeWifiSettings = async (ssid: string, password: string) => {
+    try {
+      const response = await fetch('/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wifi: {
+            ssid: ssid,
+            password: password,
+          },
+        }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update Wi-Fi settings');
+      }
+      notify('Wi-Fi settings updated. Device will restart.', {
+        variant: 'info',
+      });
+      await sendRestartCommand();
+    } catch (e) {
+      notify('Failed to update Wi-Fi settings', { variant: 'error' });
     }
   };
 
@@ -147,7 +189,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       await fetchExercises();
-      fetchSettings();
+      loadConfig();
     })();
   }, []);
 
@@ -319,47 +361,47 @@ export default function App() {
       className={`fixed inset-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}
     >
       {/* --- Top Bar --- */}
-      <div className="absolute top-6 left-6 flex gap-3 z-50">
-        <button
-          onClick={toggleTheme}
-          className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
-        >
-          {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
-        </button>
-        <button
-          onClick={() => setShowConfig(true)}
-          className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
-        >
-          <Settings size={24} />
-        </button>
-      </div>
+      <header className="w-full px-6 py-3 relative z-50">
+        <div className="max-w-4xl mx-auto relative">
+          <div className="absolute left-0 top-1/2 transform -translate-y-1/2 flex gap-3">
+            <button
+              onClick={toggleTheme}
+              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+            >
+              {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
+            </button>
+            <button
+              onClick={() => setShowConfig(true)}
+              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+            >
+              <Settings size={24} />
+            </button>
+          </div>
 
-      <div className="absolute top-8 right-6 hidden sm:flex z-20">
-        <WallClock />
-      </div>
+          <div className="flex justify-end sm:justify-center">
+            <ExerciseSelector
+              exercises={exercises}
+              selectedExercise={selectedExercise}
+              onSelectExercise={setSelectedExercise}
+              theme={theme}
+              onAddExercise={async (n, t, type) => {
+                const ex: Exercise = { name: n, thresholdPercentage: t, type };
+                await addExercise(ex);
+                await fetchExercises();
+              }}
+              onDeleteExercise={async (id) => {
+                await deleteExercise(id);
+                await fetchExercises();
+              }}
+            />
+          </div>
 
-      {/* --- Exercise Selector --- */}
-      <div className="absolute top-6 z-30 w-full">
-        <ExerciseSelector
-          exercises={exercises}
-          selectedExercise={selectedExercise}
-          onSelectExercise={setSelectedExercise}
-          theme={theme}
-          onAddExercise={async (n, t, type) => {
-            const ex: Exercise = {
-              name: n,
-              thresholdPercentage: t,
-              type,
-            };
-            await addExercise(ex);
-            await fetchExercises();
-          }}
-          onDeleteExercise={async (id) => {
-            await deleteExercise(id);
-            await fetchExercises();
-          }}
-        />
-      </div>
+          {/* Right: wall clock, only shown on sm+ */}
+          <div className="hidden sm:flex absolute right-0 top-1/2 transform -translate-y-1/2">
+            <WallClock />
+          </div>
+        </div>
+      </header>
 
       {/* --- Side Panel (History) --- */}
       <SetHistory
@@ -429,24 +471,9 @@ export default function App() {
           setAutoCompleteEnabled(autoSetEnabled);
           saveConfig(newConfig);
         }}
-        onCalibrate={async () => {
-          const response = await fetch('/calibrate');
-          if (!response.ok) {
-            console.log(response);
-            notify('Failed to send calibrate command', { variant: 'error' });
-          } else {
-            console.log(response);
-            notify('Calibration reset', { variant: 'info' });
-          }
-        }}
-        onRestart={async () => {
-          const response = await fetch('/restart');
-          if (!response.ok) {
-            notify('Failed to send restart command', { variant: 'error' });
-          } else {
-            notify('Restarting...', { variant: 'info' });
-          }
-        }}
+        onCalibrate={sendCalibrateCommand}
+        onRestart={sendRestartCommand}
+        onWifiChange={changeWifiSettings}
       />
       <NotificationStack ref={notificationRef} theme={theme} />
     </div>

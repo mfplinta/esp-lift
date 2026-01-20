@@ -17,6 +17,10 @@
 #include "encoder.h"
 #include "http_handler_fs.h"
 #include "wifi.h"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
 #define ANSI_CURSOR_UP(n) "\033[" #n "A"
 #define ANSI_CLEAR_LINE "\033[2K\r"
@@ -385,6 +389,17 @@ esp_err_t delete_exercises_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+static esp_err_t captive_portal_handler(httpd_req_t *req) {
+  // 302 redirect to ESP32 IP (AP IP)
+  const char *location = "http://192.168.4.1/";
+  httpd_resp_set_status(req, "302 Found");
+  httpd_resp_set_hdr(req, "Location", location);
+  httpd_resp_send(req, NULL, 0);
+
+  ESP_LOGI("CAPTIVE", "Redirecting /generate_204 to %s", location);
+  return ESP_OK;
+}
+
 static inline void print_help() {
   printf("Welcome to ESP-LIFT.\n\n"
          "1. Get system information\n"
@@ -517,21 +532,50 @@ void app_main(void) {
 
   /* Wifi */
   wifi_config_t wifi_config = {0};
+
   strncpy((char *) wifi_config.sta.ssid, settings.ssid, sizeof(wifi_config.sta.ssid));
+
   strncpy((char *) wifi_config.sta.password, settings.password, sizeof(wifi_config.sta.password));
-  init_wifi(wifi_config, settings.hostname);
+
+  wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+  wifi_config.sta.pmf_cfg.capable = true;
+  wifi_config.sta.pmf_cfg.required = false;
+
+  init_wifi(&wifi_config, settings.hostname);
 
   /* HTTP Server */
   httpd_handle_t server = NULL;
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
+  /* Captive portals */
+  const char *captive_paths[] = {"/generate_204", "/fwlink", "/hotspot-detect.html", "/ncsi.txt",
+                                 "/connecttest.txt"};
+
+  size_t num_captive_paths = sizeof(captive_paths) / sizeof(captive_paths[0]);
+
   config.uri_match_fn = httpd_uri_match_wildcard;
   config.close_fn = client_close_handler;
   config.lru_purge_enable = true;
   config.keep_alive_enable = true;
-  config.max_uri_handlers = 9;
+  config.max_uri_handlers = num_captive_paths + 9;
 
   ESP_ERROR_CHECK(httpd_start(&server, &config));
+
+  // Register each path in a loop
+  for (size_t i = 0; i < num_captive_paths; i++) {
+    httpd_uri_t *uri = malloc(sizeof(httpd_uri_t));
+    if (!uri) {
+      ESP_LOGE("HTTPD", "Failed to allocate memory for URI handler");
+      continue;
+    }
+
+    *uri = (httpd_uri_t) {.uri = captive_paths[i],
+                          .method = HTTP_GET,
+                          .handler = captive_portal_handler,
+                          .user_ctx = NULL};
+
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, uri));
+  }
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/ws",
                                                                      .method = HTTP_GET,
                                                                      .handler = ws_handler,
