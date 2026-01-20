@@ -1,0 +1,5 @@
+nvs,data,nvs,,24K,
+phy_init,data,phy,,4K,
+factory,app,factory,,1M,
+www,data,littlefs,,768K,
+cfg,data,littlefs,,192K

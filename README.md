@@ -20,7 +20,10 @@ Next, make sure you have [devenv](https://devenv.sh/getting-started/) installed,
 ```sh
 devenv shell
 
-# Builds web app and ESP, flashes, and opens serial monitor
+# Builds web app and ESP binary, flashes, and opens serial monitor
+# Options:
+# --flash-size=(4mb)|2mb - destination ESP32 flash size
+# --build-only - do not flash and open monitor
 build
 ```
 

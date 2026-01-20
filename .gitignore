@@ -6,6 +6,7 @@
 # esp-idf
 build/
 managed_components/
+sdkconfig
 sdkconfig.old
 # React app
 web_app/node_modules
