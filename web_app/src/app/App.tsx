@@ -142,8 +142,6 @@ export default function App() {
     const response = await fetch('/calibrate');
     if (!response.ok) {
       notify('Failed to send calibrate command', { variant: 'error' });
-    } else {
-      notify('Calibration reset', { variant: 'info' });
     }
   };
 
@@ -197,25 +195,34 @@ export default function App() {
   const { readyState } = useWebSocket({
     url: `ws://${window.location.href.split('/')[2]}/ws`,
     onMessage: (e) => {
-      const data = JSON.parse(e.data);
+      const data: {
+        name: string;
+        calibrated: number;
+        cal_state: 'idle' | 'seek_max' | 'done';
+      } = JSON.parse(e.data);
       const calibrated = Math.min(Math.max(0, data.calibrated ?? 0), 100);
 
-      if (data.event === 'rotate') {
-        if (selectedExercise?.type === 'alternating') {
-          if (data.name === 'right') {
-            setHandlePositionRight(calibrated);
-          } else {
-            setHandlePosition(calibrated);
-          }
+      if (selectedExercise?.type === 'alternating') {
+        if (data.name === 'right') {
+          setHandlePositionRight(calibrated);
         } else {
           setHandlePosition(calibrated);
         }
+      } else {
+        setHandlePosition(calibrated);
+      }
 
-        if (data.calibrated == null)
-          notify(`Pull ${data.name} to calibrate, then let go`, {
-            autoDismiss: 1000,
-            icon: Dumbbell,
-          });
+      if (data.cal_state == 'seek_max')
+        notify(`Pull ${data.name} to calibrate, then let go`, {
+          autoDismiss: 1000,
+          icon: Dumbbell,
+        });
+
+      if (data.cal_state == 'idle') {
+        notify(
+          `${data.name.charAt(0).toUpperCase() + data.name.slice(1)} calibration reset`,
+          { variant: 'info' }
+        );
       }
     },
     onError: () => {
@@ -362,7 +369,7 @@ export default function App() {
     >
       {/* --- Top Bar --- */}
       <header className="w-full px-6 py-3 relative z-50">
-        <div className="max-w-4xl mx-auto relative">
+        <div className="w-full mx-auto relative">
           <div className="absolute left-0 top-1/2 transform -translate-y-1/2 flex gap-3">
             <button
               onClick={toggleTheme}

@@ -1,5 +1,5 @@
-#ifndef HTTP_HANDLER_FS
-#define HTTP_HANDLER_FS
+#ifndef HTTP_FILESERVER_H
+#define HTTP_FILESERVER_H
 
 #include "esp_log.h"
 #include <esp_http_server.h>
@@ -7,7 +7,14 @@
 
 #define SCRATCH_BUFSIZE 8192
 
-static const char *TAG_FS = "HTTP_FS";
+esp_err_t path_handler(httpd_req_t *req);
+
+void http_fileserver_register(httpd_handle_t server, const char *base_path) {
+  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "*",
+                                                                     .method = HTTP_GET,
+                                                                     .handler = path_handler,
+                                                                     .user_ctx = (void *) "/www"}));
+}
 
 static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filename) {
   if (strstr(filename, ".html")) {
@@ -31,10 +38,10 @@ esp_err_t path_handler(httpd_req_t *req) {
     snprintf(filepath, sizeof(filepath), "%s%s", base_path, req->uri);
   }
 
-  ESP_LOGI(TAG_FS, "Serving file: %s", filepath);
+  ESP_LOGI("HTTP_FILESERVER", "Serving file: %s", filepath);
   FILE *fd = fopen(filepath, "r");
   if (!fd) {
-    ESP_LOGE(TAG_FS, "Failed to read existing file : %s", filepath);
+    ESP_LOGE("HTTP_FILESERVER", "Failed to read existing file : %s", filepath);
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
     return ESP_FAIL;
   }
@@ -43,7 +50,7 @@ esp_err_t path_handler(httpd_req_t *req) {
 
   char *chunk = malloc(SCRATCH_BUFSIZE);
   if (!chunk) {
-    ESP_LOGE(TAG_FS, "Failed to allocate memory for chunk");
+    ESP_LOGE("HTTP_FILESERVER", "Failed to allocate memory for chunk");
     fclose(fd);
     return ESP_ERR_NO_MEM;
   }
@@ -55,7 +62,7 @@ esp_err_t path_handler(httpd_req_t *req) {
       if (httpd_resp_send_chunk(req, chunk, chunksize) != ESP_OK) {
         fclose(fd);
         free(chunk);
-        ESP_LOGE(TAG_FS, "File sending failed!");
+        ESP_LOGE("HTTP_FILESERVER", "File sending failed!");
         return ESP_FAIL;
       }
     }

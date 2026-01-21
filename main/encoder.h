@@ -2,10 +2,10 @@
 #define ENCODER_H
 
 #include "driver/gpio.h"
-#include "esp_attr.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <esp_attr.h>
+#include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -15,45 +15,45 @@
 #define CAL_MAX 100.0
 #define CAL_DEBOUNCE_STEPS 5
 
-typedef enum { ENC_EVENT_ROTATION, ENC_EVENT_CALIBRATION_DONE } encoder_event_type;
+typedef enum { CAL_IDLE, CAL_SEEK_MAX, CAL_DONE } calibration_state_t;
+typedef enum { DIR_NONE = 0, DIR_POSITIVE, DIR_NEGATIVE } rotation_dir_t;
+typedef enum { EVENT_ROTATION, EVENT_CALIBRATION_CHANGE } encoder_event_type_t;
 
-typedef enum { CAL_IDLE, CAL_SEEK_MAX, CAL_DONE } calibration_state;
-
-typedef enum { DIR_NONE = 0, DIR_POSITIVE, DIR_NEGATIVE } rotation_dir;
-
-typedef struct encoder encoder;
-
-typedef struct encoder_event {
-  encoder *source;
-  encoder_event_type type;
-} encoder_event;
-
-typedef struct encoder_config {
-  const char *name;
+struct encoder_event_t;
+typedef struct {
   gpio_num_t pin_a, pin_b, pin_z;
-  void (*callback)(encoder_event *event);
-} encoder_config;
+  void (*on_event_cb)(struct encoder_event_t *event);
+} encoder_config_t;
 
-typedef struct encoder {
-  encoder_config *config;
+typedef struct {
   volatile int32_t raw_count;
   volatile int32_t offset;
   volatile uint32_t last_time;
 
-  volatile calibration_state cal_state;
-  volatile rotation_dir cal_dir;
+  volatile calibration_state_t cal_state;
+  volatile rotation_dir_t cal_dir;
 
   volatile int32_t start_count;
   volatile int32_t max_distance;
   volatile int32_t reverse_accum;
 
-  volatile bool is_calibrated;
   volatile bool z_seen;
 
   volatile double calibrated;
-} encoder;
+} encoder_state_t;
 
-static inline rotation_dir detect_dir(int32_t delta) {
+typedef struct {
+  encoder_state_t state;
+  encoder_config_t config;
+  QueueHandle_t queue;
+} encoder_t;
+
+typedef struct encoder_event_t {
+  encoder_t *source;
+  encoder_event_type_t type;
+} encoder_event_t;
+
+static inline rotation_dir_t detect_dir(int32_t delta) {
   if (delta > 0)
     return DIR_POSITIVE;
   if (delta < 0)
@@ -61,52 +61,66 @@ static inline rotation_dir detect_dir(int32_t delta) {
   return DIR_NONE;
 }
 
-static inline void send_callback(encoder *enc, encoder_event_type event) {
-  if (!enc->config || !enc->config->callback)
-    return;
+static void event_consumer_task(void *arg) {
+  QueueHandle_t queue = (QueueHandle_t) arg;
+  encoder_event_t event;
 
-  uint32_t now = xTaskGetTickCountFromISR();
-  uint32_t debounce_ticks = pdMS_TO_TICKS(DEBOUNCE_MS);
+  while (1) {
+    if (!xQueueReceive(queue, &event, portMAX_DELAY))
+      continue;
 
-  if ((now - enc->last_time) >= debounce_ticks) {
-    enc->last_time = now;
-    enc->config->callback(&(encoder_event) {.source = enc, .type = event});
+    event.source->config.on_event_cb(&event);
   }
 }
 
-static inline void encoder_calibration_step(encoder *enc, int32_t delta_raw) {
+static inline void send_callback(encoder_t *enc, encoder_event_type_t type) {
+  uint32_t now = xTaskGetTickCountFromISR();
+  uint32_t debounce_ticks = pdMS_TO_TICKS(DEBOUNCE_MS);
+
+  if ((now - enc->state.last_time) >= debounce_ticks || type == EVENT_CALIBRATION_CHANGE) {
+    enc->state.last_time = now;
+    encoder_event_t event = {.source = enc, .type = type};
+    xQueueSendFromISR(enc->queue, &event, NULL);
+  }
+}
+
+static inline void set_cal_state(encoder_t *encoder, calibration_state_t cal_state) {
+  calibration_state_t current_state = encoder->state.cal_state;
+  encoder->state.cal_state = cal_state;
+  if (current_state != cal_state) {
+    send_callback(encoder, EVENT_CALIBRATION_CHANGE);
+  }
+}
+
+static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
   if (delta_raw == 0)
     return;
 
-  rotation_dir dir = detect_dir(delta_raw);
-  int32_t logical = enc->raw_count + enc->offset;
-  int32_t dist = logical - enc->start_count;
+  rotation_dir_t dir = detect_dir(delta_raw);
+  int32_t logical = enc->state.raw_count + enc->state.offset;
+  int32_t dist = logical - enc->state.start_count;
   int32_t abs_dist = dist < 0 ? -dist : dist;
   int32_t step = delta_raw < 0 ? -delta_raw : delta_raw;
 
-  switch (enc->cal_state) {
-
+  switch (enc->state.cal_state) {
   case CAL_IDLE:
-    enc->start_count = logical;
-    enc->max_distance = 0;
-    enc->reverse_accum = 0;
-    enc->cal_dir = dir;
-    enc->cal_state = CAL_SEEK_MAX;
-    enc->is_calibrated = false;
+    enc->state.start_count = logical;
+    enc->state.max_distance = 0;
+    enc->state.reverse_accum = 0;
+    enc->state.cal_dir = dir;
+    set_cal_state(enc, CAL_SEEK_MAX);
     break;
 
   case CAL_SEEK_MAX:
-    if (abs_dist > enc->max_distance)
-      enc->max_distance = abs_dist;
+    if (abs_dist > enc->state.max_distance)
+      enc->state.max_distance = abs_dist;
 
-    if (dir == enc->cal_dir) {
-      enc->reverse_accum = 0;
+    if (dir == enc->state.cal_dir) {
+      enc->state.reverse_accum = 0;
     } else {
-      enc->reverse_accum += step;
-      if (enc->reverse_accum >= CAL_DEBOUNCE_STEPS && enc->max_distance > 0) {
-        enc->cal_state = CAL_DONE;
-        enc->is_calibrated = true;
-        send_callback(enc, ENC_EVENT_CALIBRATION_DONE);
+      enc->state.reverse_accum += step;
+      if (enc->state.reverse_accum >= CAL_DEBOUNCE_STEPS && enc->state.max_distance > 0) {
+        set_cal_state(enc, CAL_DONE);
       }
     }
     break;
@@ -116,105 +130,95 @@ static inline void encoder_calibration_step(encoder *enc, int32_t delta_raw) {
   }
 }
 
-static inline void encoder_update_calibrated(encoder *enc) {
-  if (!enc->is_calibrated || enc->max_distance <= 0) {
-    enc->calibrated = CAL_MIN;
+static inline void encoder_update_calibrated(encoder_t *enc) {
+  if (enc->state.cal_state != CAL_DONE || enc->state.max_distance <= 0) {
+    enc->state.calibrated = CAL_MIN;
     return;
   }
 
-  int32_t logical = enc->raw_count + enc->offset;
-  int32_t dist = logical - enc->start_count;
+  int32_t logical = enc->state.raw_count + enc->state.offset;
+  int32_t dist = logical - enc->state.start_count;
 
-  // If initial motion was negative, invert distance so start_count = CAL_MIN
-  if (enc->cal_dir == DIR_NEGATIVE) {
+  if (enc->state.cal_dir == DIR_NEGATIVE) {
     dist = -dist;
   }
 
-  double norm = (double) dist / (double) enc->max_distance;
-  enc->calibrated = CAL_MIN + norm * (CAL_MAX - CAL_MIN);
+  double norm = (double) dist / (double) enc->state.max_distance;
+  enc->state.calibrated = CAL_MIN + norm * (CAL_MAX - CAL_MIN);
 }
 
 static void IRAM_ATTR rotation_handler(void *arg) {
-  encoder *enc = (encoder *) arg;
-  if (!enc)
-    return;
+  encoder_t *enc = (encoder_t *) arg;
 
-  int32_t prev_raw = enc->raw_count;
+  int32_t prev_raw = enc->state.raw_count;
 
-  if (gpio_get_level(enc->config->pin_b))
-    enc->raw_count++;
+  if (gpio_get_level(enc->config.pin_b))
+    enc->state.raw_count++;
   else
-    enc->raw_count--;
+    enc->state.raw_count--;
 
-  int32_t delta_raw = enc->raw_count - prev_raw;
+  int32_t delta_raw = enc->state.raw_count - prev_raw;
 
   encoder_calibration_step(enc, delta_raw);
   encoder_update_calibrated(enc);
 
-  send_callback(enc, ENC_EVENT_ROTATION);
+  send_callback(enc, EVENT_ROTATION);
 }
 
 static void IRAM_ATTR reset_handler(void *arg) {
-  encoder *enc = (encoder *) arg;
-  if (!enc)
-    return;
-  if (enc->cal_state < CAL_DONE)
+  encoder_t *enc = (encoder_t *) arg;
+  if (enc->state.cal_state < CAL_DONE)
     return;
 
-  int32_t logical_before = enc->raw_count + enc->offset;
+  int32_t logical_before = enc->state.raw_count + enc->state.offset;
 
-  enc->raw_count = 0;
-  enc->offset = logical_before;
-  enc->z_seen = true;
+  enc->state.raw_count = 0;
+  enc->state.offset = logical_before;
+  enc->state.z_seen = true;
 }
 
-void encoder_reset_calibration(encoder *enc) {
-  if (!enc)
-    return;
-
-  ESP_LOGI("ENCODER", "Cleared calibration for %s", enc->config->name);
-  enc->cal_state = CAL_IDLE;
-  enc->cal_dir = DIR_NONE;
-  enc->start_count = enc->raw_count + enc->offset;
-  enc->max_distance = 0;
-  enc->reverse_accum = 0;
-  enc->is_calibrated = false;
-  enc->z_seen = false;
-  enc->calibrated = CAL_MIN;
+void encoder_reset_calibration(encoder_t *enc) {
+  ESP_LOGI("ENCODER", "Cleared calibration");
+  set_cal_state(enc, CAL_IDLE);
+  enc->state.cal_dir = DIR_NONE;
+  enc->state.start_count = enc->state.raw_count + enc->state.offset;
+  enc->state.max_distance = 0;
+  enc->state.reverse_accum = 0;
+  enc->state.z_seen = false;
+  enc->state.calibrated = CAL_MIN;
 }
 
-encoder *init_encoder(encoder_config *enc_config) {
-  if (!enc_config)
-    return NULL;
-
+encoder_t *init_encoder(encoder_config_t enc_config) {
   gpio_config_t io_conf = {};
   io_conf.intr_type = GPIO_INTR_NEGEDGE;
   io_conf.pin_bit_mask =
-    ((1ULL << (uint64_t) enc_config->pin_a) | (1ULL << (uint64_t) enc_config->pin_b) |
-     (1ULL << (uint64_t) enc_config->pin_z));
+    ((1ULL << (uint64_t) enc_config.pin_a) | (1ULL << (uint64_t) enc_config.pin_b) |
+     (1ULL << (uint64_t) enc_config.pin_z));
   io_conf.mode = GPIO_MODE_INPUT;
   gpio_config(&io_conf);
 
-  encoder *enc = calloc(1, sizeof(encoder));
+  encoder_t *enc = calloc(1, sizeof(encoder_t));
   if (!enc)
     return NULL;
 
   enc->config = enc_config;
-  enc->raw_count = 0;
-  enc->offset = 0;
-  enc->last_time = 0;
-  enc->cal_state = CAL_IDLE;
-  enc->cal_dir = DIR_NONE;
-  enc->start_count = 0;
-  enc->max_distance = 0;
-  enc->reverse_accum = 0;
-  enc->is_calibrated = false;
-  enc->z_seen = false;
-  enc->calibrated = CAL_MIN;
+  enc->state.raw_count = 0;
+  enc->state.offset = 0;
+  enc->state.last_time = 0;
+  set_cal_state(enc, CAL_IDLE);
+  enc->state.cal_dir = DIR_NONE;
+  enc->state.start_count = 0;
+  enc->state.max_distance = 0;
+  enc->state.reverse_accum = 0;
+  enc->state.z_seen = false;
+  enc->state.calibrated = CAL_MIN;
+  enc->queue = xQueueCreate(8, sizeof(encoder_event_t));
 
   gpio_install_isr_service(0);
-  gpio_isr_handler_add(enc_config->pin_a, rotation_handler, enc);
-  gpio_isr_handler_add(enc_config->pin_z, reset_handler, enc);
+  gpio_isr_handler_add(enc_config.pin_a, rotation_handler, enc);
+  gpio_isr_handler_add(enc_config.pin_z, reset_handler, enc);
+
+  xTaskCreate(event_consumer_task, "event_consumer_task", 4096, enc->queue, 5, NULL);
 
   return enc;
 }

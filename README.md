@@ -7,7 +7,7 @@
 
 ESP32-based rep counter for cable machines.
 
-- Hosts its own web application and communicate via WebSockets with it for live updates.
+- Hosts its own web application and communicates via WebSockets with it for live updates.
 - Supports adding custom exercises with persistence in the device.
 - Calibrates with a simple cable pull across the machine's range-of-motion.
 - Stores workout history in the browser's local storage, with support for exporting.
