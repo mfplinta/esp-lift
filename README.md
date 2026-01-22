@@ -14,7 +14,7 @@ ESP32-based rep counter for cable machines.
 
 ## How to build
 
-First, set up Wi-Fi credentials and defaults under `web_app/cfg_partition/config.json`.
+First, set up Wi-Fi credentials and defaults under the `cfg` directory.
 
 Next, make sure you have [devenv](https://devenv.sh/getting-started/) installed, then go into the project root, and execute:
 

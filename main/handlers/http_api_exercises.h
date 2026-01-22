@@ -13,18 +13,18 @@ esp_err_t delete_exercises_handler(httpd_req_t *req);
 
 void http_api_exercises_register(httpd_handle_t server, const char *exercises_json) {
   ESP_ERROR_CHECK(
-    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/exercises",
+    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/api/exercises",
                                                        .method = HTTP_GET,
                                                        .handler = get_exercises_handler,
                                                        .user_ctx = (void *) exercises_json}));
   ESP_ERROR_CHECK(
-    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/exercises",
+    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/api/exercises",
                                                        .method = HTTP_POST,
                                                        .handler = post_exercises_handler,
                                                        .user_ctx = (void *) exercises_json}));
 
   ESP_ERROR_CHECK(
-    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/exercises",
+    httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/api/exercises",
                                                        .method = HTTP_DELETE,
                                                        .handler = delete_exercises_handler,
                                                        .user_ctx = (void *) exercises_json}));

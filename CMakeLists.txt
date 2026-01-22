@@ -4,4 +4,4 @@ idf_build_set_property(MINIMAL_BUILD ON)
 project(esp_lift)
 
 littlefs_create_partition_image(www "./web_app/dist" FLASH_IN_PROJECT)
-littlefs_create_partition_image(cfg "./web_app/cfg_partition" FLASH_IN_PROJECT)
+littlefs_create_partition_image(cfg "./cfg" FLASH_IN_PROJECT)

@@ -1,19 +1,13 @@
-import { ChevronDown, Wifi, X } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, Wifi, X } from 'lucide-react';
 import { Switch } from '@/app/components/ui/switch';
 import { Label } from '@/app/components/ui/label';
 import { useState } from 'react';
-
-export interface Config {
-  strictMode: boolean;
-  autoCompleteSecs: number;
-}
+import { useStore } from '../store';
+import { useShallow } from 'zustand/react/shallow';
 
 interface ConfigModalProps {
   isOpen: boolean;
-  theme: 'light' | 'dark';
-  config: Config;
   onClose: () => void;
-  onConfigChange: (newConfig: Config, autoSetEnabled: boolean) => void;
   onCalibrate?: () => void;
   onRestart?: () => void;
   onWifiChange?: (ssid: string, password: string) => void;
@@ -21,15 +15,19 @@ interface ConfigModalProps {
 
 export default function ConfigModal({
   isOpen,
-  theme,
-  config,
   onClose,
-  onConfigChange,
   onCalibrate,
   onRestart,
   onWifiChange,
 }: ConfigModalProps) {
   if (!isOpen) return null;
+
+  const { config, setConfig } = useStore(
+    useShallow((s) => ({
+      config: s.config,
+      setConfig: s.setConfig,
+    }))
+  );
 
   const autoCompleteEnabled = !!(
     config.autoCompleteSecs && config.autoCompleteSecs !== 0
@@ -38,11 +36,7 @@ export default function ConfigModal({
   const [wifiOpen, setWifiOpen] = useState(false);
   const [wifiSSID, setWifiSSID] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
-
-  // Helper to update individual fields
-  const updateConfig = (key: keyof Config, value: any) => {
-    onConfigChange({ ...config, [key]: value }, autoCompleteEnabled);
-  };
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -55,20 +49,24 @@ export default function ConfigModal({
       {/* Modal */}
       <div
         className={`relative w-full max-w-md rounded-2xl shadow-2xl ${
-          theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-black'
+          config.theme === 'dark'
+            ? 'bg-gray-900 text-white'
+            : 'bg-white text-black'
         }`}
       >
         {/* Header */}
         <div
           className={`flex items-center justify-between p-6 border-b ${
-            theme === 'dark' ? 'border-gray-800' : 'border-gray-200'
+            config.theme === 'dark' ? 'border-gray-800' : 'border-gray-200'
           }`}
         >
           <h2 className="text-2xl font-bold">Settings</h2>
           <button
             onClick={onClose}
             className={`p-2 rounded-full transition-colors ${
-              theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
+              config.theme === 'dark'
+                ? 'hover:bg-gray-800'
+                : 'hover:bg-gray-100'
             }`}
             aria-label="Close"
           >
@@ -82,7 +80,7 @@ export default function ConfigModal({
           <div className="space-y-4">
             <h3
               className={`text-lg font-bold ${
-                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                config.theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
               }`}
             >
               App
@@ -100,7 +98,9 @@ export default function ConfigModal({
                   </Label>
                   <p
                     className={`text-sm mt-1 ${
-                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                      config.theme === 'dark'
+                        ? 'text-gray-400'
+                        : 'text-gray-600'
                     }`}
                   >
                     Count reps only when the handle passes the green threshold
@@ -111,7 +111,7 @@ export default function ConfigModal({
                   id="strict-mode"
                   checked={config.strictMode}
                   onCheckedChange={(checked) =>
-                    updateConfig('strictMode', checked)
+                    setConfig({ strictMode: checked })
                   }
                   className="ml-4"
                 />
@@ -127,7 +127,9 @@ export default function ConfigModal({
                   </Label>
                   <p
                     className={`text-sm mt-1 ${
-                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                      config.theme === 'dark'
+                        ? 'text-gray-400'
+                        : 'text-gray-600'
                     }`}
                   >
                     Automatically complete the set after a period of inactivity
@@ -137,10 +139,11 @@ export default function ConfigModal({
                   id="auto-set"
                   checked={autoCompleteEnabled}
                   onCheckedChange={(checked) =>
-                    updateConfig(
-                      'autoCompleteSecs',
-                      checked ? config.autoCompleteSecs || 10 : 0
-                    )
+                    setConfig({
+                      autoCompleteSecs: checked
+                        ? config.autoCompleteSecs || 10
+                        : 0,
+                    })
                   }
                   className="ml-4"
                 />
@@ -160,10 +163,10 @@ export default function ConfigModal({
                     step="5"
                     value={config.autoCompleteSecs}
                     onChange={(e) =>
-                      updateConfig('autoCompleteSecs', Number(e.target.value))
+                      setConfig({ autoCompleteSecs: Number(e.target.value) })
                     }
                     className={`w-full mt-2 h-2 rounded-lg appearance-none cursor-pointer ${
-                      theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'
+                      config.theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'
                     } [&::-webkit-slider-thumb]:appearance-none
                       [&::-webkit-slider-thumb]:h-4
                       [&::-webkit-slider-thumb]:w-4
@@ -174,20 +177,25 @@ export default function ConfigModal({
                       active:[&::-webkit-slider-thumb]:scale-125
                       `}
                     style={{
-                      accentColor: theme === 'dark' ? '#ffffff' : '#000000',
+                      accentColor:
+                        config.theme === 'dark' ? '#ffffff' : '#000000',
                     }}
                   />
                   <div className="flex justify-between mt-1">
                     <span
                       className={`text-xs ${
-                        theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                        config.theme === 'dark'
+                          ? 'text-gray-500'
+                          : 'text-gray-400'
                       }`}
                     >
                       5s
                     </span>
                     <span
                       className={`text-xs ${
-                        theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                        config.theme === 'dark'
+                          ? 'text-gray-500'
+                          : 'text-gray-400'
                       }`}
                     >
                       60s
@@ -201,7 +209,7 @@ export default function ConfigModal({
           {/* Section Divider */}
           <div
             className={`border-t-2 ${
-              theme === 'dark' ? 'border-gray-700' : 'border-gray-300'
+              config.theme === 'dark' ? 'border-gray-700' : 'border-gray-300'
             }`}
           />
 
@@ -209,7 +217,7 @@ export default function ConfigModal({
           <div className="space-y-4">
             <h3
               className={`text-lg font-bold ${
-                theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                config.theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
               }`}
             >
               Hardware
@@ -219,7 +227,7 @@ export default function ConfigModal({
             <button
               onClick={onCalibrate}
               className={`py-2 px-4 rounded font-semibold border transition-all ${
-                theme === 'dark'
+                config.theme === 'dark'
                   ? 'bg-white text-blue-600 border-blue-600 hover:bg-blue-100'
                   : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-400'
               }`}
@@ -232,7 +240,7 @@ export default function ConfigModal({
             <button
               onClick={onRestart}
               className={`py-2 px-4 rounded font-semibold border transition-all ${
-                theme === 'dark'
+                config.theme === 'dark'
                   ? 'bg-white text-red-700 border-red-700 hover:bg-red-100'
                   : 'bg-red-700 text-white border-red-700 hover:bg-red-400'
               }`}
@@ -247,7 +255,7 @@ export default function ConfigModal({
             <button
               onClick={() => setWifiOpen((v) => !v)}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${
-                theme === 'dark'
+                config.theme === 'dark'
                   ? 'border-gray-700 hover:bg-gray-800'
                   : 'border-gray-300 hover:bg-gray-100'
               }`}
@@ -267,7 +275,7 @@ export default function ConfigModal({
             {wifiOpen && (
               <div
                 className={`p-4 rounded-xl border shadow-inner space-y-4 ${
-                  theme === 'dark'
+                  config.theme === 'dark'
                     ? 'bg-gray-800 border-gray-700'
                     : 'bg-gray-50 border-gray-300'
                 }`}
@@ -281,7 +289,7 @@ export default function ConfigModal({
                     value={wifiSSID}
                     onChange={(e) => setWifiSSID(e.target.value)}
                     className={`w-full px-3 py-2 rounded-lg border text-sm ${
-                      theme === 'dark'
+                      config.theme === 'dark'
                         ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500'
                         : 'bg-white border-gray-300 text-black placeholder-gray-400'
                     }`}
@@ -291,17 +299,30 @@ export default function ConfigModal({
                 {/* Password */}
                 <div className="space-y-1">
                   <Label className="text-sm font-medium">Password</Label>
-                  <input
-                    type="password"
-                    placeholder="Enter password"
-                    value={wifiPassword}
-                    onChange={(e) => setWifiPassword(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-lg border text-sm ${
-                      theme === 'dark'
-                        ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500'
-                        : 'bg-white border-gray-300 text-black placeholder-gray-400'
-                    }`}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Enter password"
+                      value={wifiPassword}
+                      onChange={(e) => setWifiPassword(e.target.value)}
+                      className={`w-full pl-3 pr-10 py-2 rounded-lg border text-sm ${
+                        config.theme === 'dark'
+                          ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500'
+                          : 'bg-white border-gray-300 text-black placeholder-gray-400'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md transition-colors ${
+                        config.theme === 'dark'
+                          ? 'text-gray-400 hover:bg-gray-700'
+                          : 'text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Apply */}
@@ -311,7 +332,7 @@ export default function ConfigModal({
                     onWifiChange && onWifiChange(wifiSSID, wifiPassword);
                   }}
                   className={`w-full py-2 rounded-lg font-semibold transition-all ${
-                    theme === 'dark'
+                    config.theme === 'dark'
                       ? 'bg-white text-black hover:bg-gray-200'
                       : 'bg-black text-white hover:bg-gray-800'
                   }`}
@@ -326,13 +347,13 @@ export default function ConfigModal({
         {/* Footer */}
         <div
           className={`p-6 border-t ${
-            theme === 'dark' ? 'border-gray-800' : 'border-gray-200'
+            config.theme === 'dark' ? 'border-gray-800' : 'border-gray-200'
           }`}
         >
           <button
             onClick={onClose}
             className={`w-full py-3 px-6 rounded-xl font-semibold transition-all ${
-              theme === 'dark'
+              config.theme === 'dark'
                 ? 'bg-white text-black hover:bg-gray-200'
                 : 'bg-black text-white hover:bg-gray-800'
             }`}

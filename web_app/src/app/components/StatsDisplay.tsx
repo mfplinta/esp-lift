@@ -1,33 +1,35 @@
+import { useStore } from '../store';
+import { useShallow } from 'zustand/react/shallow';
+
 interface StatsDisplayProps {
-  label: string;
-  value: number;
-  theme: 'light' | 'dark';
   size?: 'normal' | 'large';
   highlight?: boolean;
-  isResting?: boolean;
-  restTime?: number;
 }
 
 export default function StatsDisplay({
-  label,
-  value,
-  theme,
   size = 'normal',
   highlight = false,
-  isResting = false,
-  restTime = 0,
 }: StatsDisplayProps) {
+  const { isResting, activeTime, config, reps, isAlternating } = useStore(
+    useShallow((s) => ({
+      isResting: s.isResting,
+      activeTime: s.activeTime,
+      config: s.config,
+      reps: s.reps,
+      isAlternating: s.isAlternating,
+    }))
+  );
+
   const textSize =
     size === 'large' ? 'text-9xl' : 'text-3xl sm:text-4xl lg:text-5xl';
   const labelColor = highlight
-    ? theme === 'dark'
+    ? config.theme === 'dark'
       ? 'text-red-400'
       : 'text-red-600'
-    : theme === 'dark'
+    : config.theme === 'dark'
       ? 'text-white'
       : 'text-black';
 
-  // Don't render rest/reps mode at all - just one or the other with fade
   return (
     <div className={`${labelColor} whitespace-nowrap`}>
       {isResting ? (
@@ -36,7 +38,7 @@ export default function StatsDisplay({
             isResting ? 'opacity-100' : 'opacity-0'
           }`}
         >
-          {restTime.toFixed(1)}s
+          {activeTime.toFixed(1)}s
         </span>
       ) : (
         <span
@@ -44,7 +46,7 @@ export default function StatsDisplay({
             !isResting ? 'opacity-100' : 'opacity-0'
           }`}
         >
-          <span className={highlight ? labelColor : ''}>{value}</span>
+          <span className={highlight ? labelColor : ''}>{reps}</span>
         </span>
       )}
     </div>

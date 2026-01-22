@@ -10,10 +10,5 @@
       "thresholdPercentage": 65,
       "type": "alternating"
     }
-  ],
-  "wifi": {
-    "ssid": "YOUR_SSID_HERE",
-    "password": "YOUR_PASSWORD_HERE",
-    "hostname": "esp-lift.arpa"
-  }
+  ]
 }

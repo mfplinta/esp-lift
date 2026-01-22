@@ -82,14 +82,6 @@ esp_err_t calibrate_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-static inline void print_help() {
-  printf("Welcome to ESP-LIFT.\n\n"
-         "1. Get system information\n"
-         "2. Restart ESP\n"
-         "3. Recalibrate encoders\n"
-         "4. Cat /cfg/config.json\n");
-}
-
 static inline void monitor_system_info() {
   int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
   fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
@@ -129,6 +121,15 @@ static inline void monitor_system_info() {
   esp_log_level_set("*", ESP_LOG_INFO);
 }
 
+static inline void print_help() {
+  printf("Welcome to ESP-LIFT.\n\n"
+         "1. Get system information\n"
+         "2. Restart ESP\n"
+         "3. Recalibrate encoders\n"
+         "4. List dir\n"
+         "5. Cat file\n");
+}
+
 static void input_task(void *arg) {
   print_help();
   while (1) {
@@ -149,9 +150,29 @@ static void input_task(void *arg) {
       encoder_reset_calibration(rightEncoder);
       break;
     case '4':
-      FILE *f = fopen("/cfg/config.json", "r");
+      char ls_path[50];
+      printf("(no echo) ls: ");
+      scanf("%49s%*c", ls_path);
+      printf("\n");
+      DIR *d = opendir(ls_path);
+      if (d) {
+        struct dirent *dir;
+        while ((dir = readdir(d)) != NULL) {
+          printf("%s\n", dir->d_name);
+        }
+        closedir(d);
+      } else {
+        ESP_LOGW("MAIN", "%s does not exist or could not be opened", ls_path);
+      }
+      break;
+    case '5':
+      char cat_path[50];
+      printf("(no echo) cat: ");
+      scanf("%49s%*c", cat_path);
+      printf("\n");
+      FILE *f = fopen(cat_path, "r");
       if (!f) {
-        ESP_LOGW("MAIN", "config.json does not exist or could not be opened");
+        ESP_LOGW("MAIN", "%s does not exist or could not be opened", cat_path);
         break;
       };
       int16_t c;
@@ -233,12 +254,12 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(httpd_start(&server, &config));
   http_api_hardware_register(server);
-  http_api_exercises_register(server, "/cfg/config.json");
+  http_api_exercises_register(server, "/cfg/exercises.json");
   http_api_settings_register(server, "/cfg/config.json");
   http_captiveportalredirect_register(server);
   ws_register(server);
 
-  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/calibrate",
+  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/api/calibrate",
                                                                      .method = HTTP_GET,
                                                                      .handler = calibrate_handler,
                                                                      .user_ctx = NULL}));

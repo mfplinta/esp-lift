@@ -3,68 +3,57 @@ import { Sun, Moon, Settings, Clock, Wifi, Dumbbell } from 'lucide-react';
 import MachineVisualizer from '@/app/components/MachineVisualizer';
 import StatsDisplay from '@/app/components/StatsDisplay';
 import Controls from '@/app/components/Controls';
-import ConfigModal, { Config } from '@/app/components/ConfigModal';
-import ExerciseSelector, { Exercise } from '@/app/components/ExerciseSelector';
+import ConfigModal from '@/app/components/ConfigModal';
+import ExerciseSelector from '@/app/components/ExerciseSelector';
 import NotificationStack, {
   NotificationConfig,
   NotificationHandle,
 } from '@/app/components/NotificationStack';
-import SetHistory, { SetHistoryHandle } from './components/SetHistory';
 import useWebSocket from 'react-use-websocket-lite';
 import WallClock from './components/WallClock';
+import { useStore } from './store';
+import SetHistory from './components/SetHistory';
+import { Exercise } from './models';
+import { useShallow } from 'zustand/react/shallow';
 
 const MSG_WEBSOCKET_CONNECTING = 'Connecting...';
 const MSG_WEBSOCKET_CONNECTED = 'Connected';
 const MSG_WEBSOCKET_ERROR = 'Error connecting to device';
+
+// const host = window.location.href.split('/')[2]
+const host = '10.0.1.120';
 
 export default function App() {
   const [showConfig, setShowConfig] = useState(false);
 
   // Refs
   const notificationRef = useRef<NotificationHandle>(null);
-  const historyRef = useRef<SetHistoryHandle>(null);
 
-  // --- THEME  ---
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
-      if (savedTheme) return savedTheme;
-      return window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light';
-    }
-    return 'light';
-  });
-
-  // --- STATE: Machine Data ---
-  const [handlePosition, setHandlePosition] = useState(0);
-  const [handlePositionRight, setHandlePositionRight] = useState(0);
-  const [reps, setReps] = useState(0);
-  const [repsLeft, setRepsLeft] = useState(0);
-  const [repsRight, setRepsRight] = useState(0);
-
-  // --- STATE: Logic & Timing ---
-  const [sets, setSets] = useState(0);
-  const [activeTime, setActiveTime] = useState(0);
-  const [isResting, setIsResting] = useState(false);
-  const [isTimerActive, setIsTimerActive] = useState(false);
-
-  // Rep detection state
-  const [thresholdPosition, setThresholdPosition] = useState(70);
-  const [lastCrossed, setLastCrossed] = useState(false);
-  const [lastCrossedRight, setLastCrossedRight] = useState(false);
-  const [lastMovementTime, setLastMovementTime] = useState(Date.now());
-
-  // --- STATE: Configuration ---
-  const [config, setConfig] = useState<Config>({
-    strictMode: false,
-    autoCompleteSecs: 0,
-  });
-  const [autoCompleteEnabled, setAutoCompleteEnabled] = useState(false);
-
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(
-    null
+  const {
+    config,
+    setSliderPositionLeft,
+    setSliderPositionRight,
+    setExercises,
+    toggleTheme,
+    hydrateConfig,
+    hydrateSetHistory,
+  } = useStore(
+    useShallow((s) => ({
+      selectedExercise: s.selectedExercise,
+      config: s.config,
+      repsLeft: s.repsLeft,
+      repsRight: s.repsRight,
+      setSliderPositionLeft: s.setSliderPositionLeft,
+      setSliderPositionRight: s.setSliderPositionRight,
+      setExercises: s.setExercises,
+      addSetToHistory: s.addSetToHistory,
+      toggleTheme: s.toggleTheme,
+      reset: s.reset,
+      completeSet: s.completeSetOrRest,
+      hydrateConfig: s.hydrateConfig,
+      hydrateSetHistory: s.hydrateSetHistory,
+      startTimer: s.startTimer,
+    }))
   );
 
   // --- Helpers ---
@@ -76,7 +65,7 @@ export default function App() {
   // --- API exercises ---
   const fetchExercises = async () => {
     try {
-      const response = await fetch('/exercises');
+      const response = await fetch('/api/exercises');
       if (!response.ok) {
         throw new Error(
           { status: response.status, error: response.statusText }.toString()
@@ -85,14 +74,13 @@ export default function App() {
 
       const data = await response.json();
       setExercises(data.exercises);
-      if (data.length > 0) setSelectedExercise(data[0]);
     } catch (e) {
       notify('Failed to fetch exercises', { variant: 'error' });
     }
   };
 
-  const addExercise = async (exercise: Exercise) => {
-    const response = await fetch('/exercises', {
+  const onAddExercise = async (exercise: Exercise) => {
+    const response = await fetch('/api/exercises', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(exercise),
@@ -103,9 +91,9 @@ export default function App() {
     }
   };
 
-  const deleteExercise = async (name: string) => {
+  const onDeleteExercise = async (name: string) => {
     const response = await fetch(
-      `/exercises?name=${encodeURIComponent(name)}`,
+      `/api/exercises?name=${encodeURIComponent(name)}`,
       {
         method: 'DELETE',
       }
@@ -116,37 +104,15 @@ export default function App() {
     }
   };
 
-  const loadConfig = () => {
-    try {
-      const savedConfig = localStorage.getItem('app_settings');
-      if (savedConfig) {
-        const data = JSON.parse(savedConfig);
-        setConfig(data);
-        setAutoCompleteEnabled(data.autoCompleteSecs > 0);
-      }
-    } catch (e) {
-      notify('Failed to load settings from storage', { variant: 'error' });
-    }
-  };
-
-  const saveConfig = (newConfig: Partial<Config>) => {
-    try {
-      const fullConfig = { ...config, ...newConfig };
-      localStorage.setItem('app_settings', JSON.stringify(fullConfig));
-    } catch (e) {
-      notify('Failed to save settings to storage', { variant: 'error' });
-    }
-  };
-
   const sendCalibrateCommand = async () => {
-    const response = await fetch('/calibrate');
+    const response = await fetch('/api/calibrate');
     if (!response.ok) {
       notify('Failed to send calibrate command', { variant: 'error' });
     }
   };
 
   const sendRestartCommand = async () => {
-    const response = await fetch('/restart');
+    const response = await fetch('/api/restart');
     if (!response.ok) {
       notify('Failed to send restart command', { variant: 'error' });
     } else {
@@ -156,7 +122,7 @@ export default function App() {
 
   const changeWifiSettings = async (ssid: string, password: string) => {
     try {
-      const response = await fetch('/settings', {
+      const response = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -178,22 +144,17 @@ export default function App() {
     }
   };
 
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
-  };
-
   useEffect(() => {
     (async () => {
       await fetchExercises();
-      loadConfig();
+      hydrateConfig();
+      hydrateSetHistory();
     })();
   }, []);
 
   // --- WebSocket ---
   const { readyState } = useWebSocket({
-    url: `ws://${window.location.href.split('/')[2]}/ws`,
+    url: `/ws`,
     onMessage: (e) => {
       const data: {
         name: string;
@@ -202,15 +163,8 @@ export default function App() {
       } = JSON.parse(e.data);
       const calibrated = Math.min(Math.max(0, data.calibrated ?? 0), 100);
 
-      if (selectedExercise?.type === 'alternating') {
-        if (data.name === 'right') {
-          setHandlePositionRight(calibrated);
-        } else {
-          setHandlePosition(calibrated);
-        }
-      } else {
-        setHandlePosition(calibrated);
-      }
+      if (data.name === 'right') setSliderPositionRight(calibrated);
+      else setSliderPositionLeft(calibrated);
 
       if (data.cal_state == 'seek_max')
         notify(`Pull ${data.name} to calibrate, then let go`, {
@@ -248,124 +202,9 @@ export default function App() {
     }
   }, [readyState]);
 
-  // --- Effects: Timers ---
-  useEffect(() => {
-    // Active Timer (Set OR Rest)
-    let activityInterval: any;
-    if (isTimerActive || isResting) {
-      activityInterval = setInterval(() => setActiveTime((t) => t + 0.1), 100);
-    }
-
-    // Auto Set Completion
-    let autoCheckInterval: any;
-    if (autoCompleteEnabled && reps > 0 && !isResting) {
-      autoCheckInterval = setInterval(() => {
-        if ((Date.now() - lastMovementTime) / 1000 >= config.autoCompleteSecs)
-          handleCompleteSet(true);
-      }, 1000);
-    }
-
-    return () => {
-      clearInterval(activityInterval);
-      clearInterval(autoCheckInterval);
-    };
-  }, [isTimerActive, isResting, autoCompleteEnabled, reps, lastMovementTime]);
-
-  // --- Logic: Rep Counting ---
-  const processRep = (
-    pos: number,
-    lastState: boolean,
-    setLastState: (v: boolean) => void,
-    isRight: boolean
-  ) => {
-    const isAlternating = selectedExercise?.type === 'alternating';
-    const inc = isAlternating ? 0.5 : 1;
-
-    const triggerStart = config.strictMode ? pos > thresholdPosition : pos < 30;
-    const triggerEnd = config.strictMode ? pos <= thresholdPosition : pos > 70;
-
-    if (!lastState && triggerStart) {
-      setLastState(true);
-    } else if (lastState && triggerEnd) {
-      // Rep Completed
-      setReps((prev) => prev + inc);
-      if (isAlternating)
-        isRight ? setRepsRight((r) => r + 1) : setRepsLeft((l) => l + 1);
-      setLastState(false);
-      setLastMovementTime(Date.now());
-
-      if (isResting) {
-        historyRef.current?.addRecord({
-          setNumber: 0,
-          reps: 0,
-          duration: activeTime,
-          timestamp: Date.now(),
-          exerciseName: 'Rest',
-        });
-        setIsResting(false);
-        setActiveTime(0);
-      }
-
-      // Start set timer if not running
-      if (!isTimerActive) setIsTimerActive(true);
-    }
-  };
-
-  useEffect(
-    () => processRep(handlePosition, lastCrossed, setLastCrossed, false),
-    [handlePosition]
-  );
-  useEffect(() => {
-    if (selectedExercise?.type === 'alternating')
-      processRep(
-        handlePositionRight,
-        lastCrossedRight,
-        setLastCrossedRight,
-        true
-      );
-  }, [handlePositionRight]);
-
-  // --- Handlers ---
-  const handleCompleteSet = (autoSetTimedOut: boolean) => {
-    if (reps > 0) {
-      // Add SET to history
-      historyRef.current?.addRecord({
-        setNumber: sets + 1,
-        reps,
-        duration: activeTime,
-        timestamp: Date.now(),
-        exerciseName: selectedExercise?.name || 'Unknown',
-      });
-
-      // Reset Set Data
-      setSets((s) => s + 1);
-      setReps(0);
-      setRepsLeft(0);
-      setRepsRight(0);
-      setLastCrossed(false);
-      setLastCrossedRight(false);
-
-      // Switch to REST mode
-      setIsTimerActive(false);
-      setIsResting(true);
-      setActiveTime(autoSetTimedOut ? config.autoCompleteSecs : 0); // Reset timer for the Rest
-    }
-  };
-
-  const handleReset = () => {
-    setReps(0);
-    setRepsLeft(0);
-    setRepsRight(0);
-    setSets(0);
-    setActiveTime(0);
-    setIsTimerActive(false);
-    setIsResting(false);
-    historyRef.current?.clearHistory();
-  };
-
   return (
     <div
-      className={`fixed inset-0 transition-colors duration-300 ${theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}
+      className={`fixed inset-0 transition-colors duration-300 ${config.theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}
     >
       {/* --- Top Bar --- */}
       <header className="w-full px-6 py-3 relative z-50">
@@ -373,13 +212,13 @@ export default function App() {
           <div className="absolute left-0 top-1/2 transform -translate-y-1/2 flex gap-3">
             <button
               onClick={toggleTheme}
-              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${config.theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
             >
-              {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
+              {config.theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
             </button>
             <button
               onClick={() => setShowConfig(true)}
-              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${config.theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
             >
               <Settings size={24} />
             </button>
@@ -387,19 +226,8 @@ export default function App() {
 
           <div className="flex justify-end sm:justify-center">
             <ExerciseSelector
-              exercises={exercises}
-              selectedExercise={selectedExercise}
-              onSelectExercise={setSelectedExercise}
-              theme={theme}
-              onAddExercise={async (n, t, type) => {
-                const ex: Exercise = { name: n, thresholdPercentage: t, type };
-                await addExercise(ex);
-                await fetchExercises();
-              }}
-              onDeleteExercise={async (id) => {
-                await deleteExercise(id);
-                await fetchExercises();
-              }}
+              onAddExercise={onAddExercise}
+              onDeleteExercise={onDeleteExercise}
             />
           </div>
 
@@ -411,59 +239,23 @@ export default function App() {
       </header>
 
       {/* --- Side Panel (History) --- */}
-      <SetHistory
-        ref={historyRef}
-        theme={theme}
-        isResting={isResting}
-        currentRestTime={isResting ? activeTime : 0}
-        currentSetTime={!isResting ? activeTime : 0}
-        setCount={sets}
-      />
+      <SetHistory />
 
       {/* --- Main Content --- */}
       <div className="fixed inset-0 flex flex-col items-center justify-center p-4 pointer-events-none mt-20">
         {/* Stats Display (Center) */}
         <div className="pointer-events-auto mb-4">
-          <StatsDisplay
-            label={isResting ? 'Resting' : 'Reps'}
-            value={isResting ? activeTime : reps}
-            theme={theme}
-            size="large"
-            isResting={isResting}
-            // If StatsDisplay expects restTime separately:
-            restTime={isResting ? activeTime : 0}
-          />
+          <StatsDisplay size="large" />
         </div>
 
         {/* Machine Visualizer */}
         <div className="flex-1 w-full max-w-md pointer-events-auto min-h-0">
-          <MachineVisualizer
-            handlePosition={handlePosition}
-            handlePositionRight={
-              selectedExercise?.type === 'alternating'
-                ? handlePositionRight
-                : undefined
-            }
-            thresholdPosition={thresholdPosition}
-            onPositionChange={setHandlePosition}
-            onPositionRightChange={setHandlePositionRight}
-            onThresholdChange={setThresholdPosition}
-            theme={theme}
-            isAlternating={selectedExercise?.type === 'alternating'}
-            repsLeft={repsLeft}
-            repsRight={repsRight}
-            totalReps={reps}
-          />
+          <MachineVisualizer />
         </div>
 
         {/* Bottom Controls */}
         <div className="absolute bottom-6 right-6 pointer-events-auto z-23">
-          <Controls
-            onCompleteSet={() => handleCompleteSet(false)}
-            onReset={handleReset}
-            theme={theme}
-            hasReps={reps > 0}
-          />
+          <Controls />
         </div>
       </div>
 
@@ -471,18 +263,11 @@ export default function App() {
       <ConfigModal
         isOpen={showConfig}
         onClose={() => setShowConfig(false)}
-        theme={theme}
-        config={config}
-        onConfigChange={(newConfig, autoSetEnabled) => {
-          setConfig(newConfig);
-          setAutoCompleteEnabled(autoSetEnabled);
-          saveConfig(newConfig);
-        }}
         onCalibrate={sendCalibrateCommand}
         onRestart={sendRestartCommand}
         onWifiChange={changeWifiSettings}
       />
-      <NotificationStack ref={notificationRef} theme={theme} />
+      <NotificationStack ref={notificationRef} theme={config.theme} />
     </div>
   );
 }

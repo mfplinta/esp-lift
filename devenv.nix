@@ -3,18 +3,6 @@
 let
   programmingBaudRate = 921600;
   monitorBaudRate = 921600;
-  defaultSdkConfig = ''
-    CONFIG_PARTITION_TABLE_CUSTOM=y
-    CONFIG_HTTPD_WS_SUPPORT=y
-    CONFIG_MONITOR_BAUD=${toString monitorBaudRate}
-    CONFIG_ESPTOOLPY_MONITOR_BAUD=${toString monitorBaudRate}
-
-    CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
-    CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-    # CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set
-    CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-4mb.csv"
-    CONFIG_PARTITION_TABLE_FILENAME="partitions-4mb.csv"
-  '';
 in
 {
   overlays = [ inputs.esp-dev.overlays.default ];
@@ -66,54 +54,62 @@ in
       esac
     fi
 
-    (
-      cd web_app
-      [ -f cfg_partition/config.json ] || cp cfg_partition/config.template.json cfg_partition/config.json
-      [ -d node_modules ] || npm i
-      npx prettier --write .
-      vite build
-    )
+    set_2mb() {
+      sed -i \
+        -e 's/^CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="2MB"/' \
+        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set/' \
+        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_2MB.*/CONFIG_ESPTOOLPY_FLASHSIZE_2MB=y/' \
+        -e 's/^.*CONFIG_PARTITION_TABLE_FILENAME=.*/CONFIG_PARTITION_TABLE_FILENAME="partitions-2mb.csv"/' \
+        -e 's/^.*CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=.*/CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-2mb.csv"/' \
+        sdkconfig
+    }
 
-    (
-      cd main
-      clang-format -i *.c *.h
-    )
-
-    SDKCONFIG_CREATED=0
+    set_4mb() {
+      sed -i \
+        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="4MB"/' \
+        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y/' \
+        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_2MB.*/# CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set/' \
+        -e 's/^.*CONFIG_PARTITION_TABLE_FILENAME=.*/CONFIG_PARTITION_TABLE_FILENAME="partitions-4mb.csv"/' \
+        -e 's/^.*CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=.*/CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-4mb.csv"/' \
+        sdkconfig
+    }
 
     if [ ! -f sdkconfig ]; then
-      echo "Creating sdkconfig with defaults"
+      idf.py reconfigure
 
-      cat > sdkconfig <<EOF
-${defaultSdkConfig}
-EOF
+      sed -i \
+        -e 's/# CONFIG_PARTITION_TABLE_CUSTOM is not set*/CONFIG_PARTITION_TABLE_CUSTOM=y/' \
+        -e 's/^.*CONFIG_HTTPD_WS_SUPPORT.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
+        -e 's/^CONFIG_MONITOR_BAUD=.*/CONFIG_MONITOR_BAUD=${toString monitorBaudRate}/' \
+        -e 's/^CONFIG_ESPTOOLPY_MONITOR_BAUD=.*/CONFIG_ESPTOOLPY_MONITOR_BAUD=${toString monitorBaudRate}/' \
+        -e 's/^CONFIG_ESP_CONSOLE_UART_BAUDRATE=.*/CONFIG_ESP_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}/' \
+        sdkconfig
 
-      SDKCONFIG_CREATED=1
+      set_4mb
     fi
 
     if [ -n "$FLASH_SIZE" ]; then
       echo "Applying flash size: $FLASH_SIZE"
 
       if [ "$FLASH_SIZE" = "2mb" ]; then
-        sed -i \
-          -e 's/^CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="2MB"/' \
-          -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set/' \
-          -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_2MB.*/CONFIG_ESPTOOLPY_FLASHSIZE_2MB=y/' \
-          -e 's/partitions-[0-9]*mb.csv/partitions-2mb.csv/g' \
-          sdkconfig
+        set_2mb
       else
-        sed -i \
-          -e 's/^CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="4MB"/' \
-          -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y/' \
-          -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_2MB.*/# CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set/' \
-          -e 's/partitions-[0-9]*mb.csv/partitions-4mb.csv/g' \
-          sdkconfig
+        set_4mb
       fi
     fi
 
-    if [ "$SDKCONFIG_CREATED" -eq 1 ] || [ -n "$FLASH_SIZE" ]; then
-      idf.py reconfigure
-    fi
+    (
+      cd web_app
+      [ -d node_modules ] || npm i
+      npx prettier --write .
+      vite build
+    )
+
+    (
+      [ -f cfg/config.json ] || cp cfg/config.template.json cfg/config.json
+      cd main
+      clang-format -i *.c *.h
+    )
 
     idf.py build
 
