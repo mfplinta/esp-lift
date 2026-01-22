@@ -37,9 +37,8 @@ int exercises_add(cJSON *root, const char *name, double thresholdPercentage, exe
   cJSON *exercise = NULL;
   cJSON_ArrayForEach(exercise, exercises) {
     cJSON *name_item = cJSON_GetObjectItemCaseSensitive(exercise, "name");
-    if (cJSON_IsString(name_item) && name_item->valuestring != NULL &&
+    if (cJSON_IsString(name_item) && name_item->valuestring &&
         strcmp(name_item->valuestring, name) == 0) {
-      /* Exercise exists -> update its thresholdPercentage and type */
       cJSON *threshold_item = cJSON_GetObjectItemCaseSensitive(exercise, "thresholdPercentage");
       if (cJSON_IsNumber(threshold_item)) {
         threshold_item->valuedouble = thresholdPercentage;
@@ -57,11 +56,17 @@ int exercises_add(cJSON *root, const char *name, double thresholdPercentage, exe
                                   cJSON_CreateString(exercise_type_to_string(type)));
       }
 
-      return 1; /* Updated existing exercise */
+      return 1;
     }
   }
 
-  return 0;
+  cJSON *new_exercise = cJSON_CreateObject();
+  cJSON_AddStringToObject(new_exercise, "name", name);
+  cJSON_AddNumberToObject(new_exercise, "thresholdPercentage", thresholdPercentage);
+  cJSON_AddStringToObject(new_exercise, "type", exercise_type_to_string(type));
+  cJSON_AddItemToArray(exercises, new_exercise);
+
+  return 1;
 }
 
 int exercises_remove(cJSON *root, const char *name) {

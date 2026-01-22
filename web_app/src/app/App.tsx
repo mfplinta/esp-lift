@@ -89,6 +89,7 @@ export default function App() {
       notify('Failed to add exercise', { variant: 'error' });
       return;
     }
+    fetchExercises();
   };
 
   const onDeleteExercise = async (name: string) => {
@@ -102,6 +103,7 @@ export default function App() {
       notify('Failed to delete exercise', { variant: 'error' });
       return;
     }
+    fetchExercises();
   };
 
   const sendCalibrateCommand = async () => {
