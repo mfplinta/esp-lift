@@ -10,11 +10,11 @@ export default function StatsDisplay({
   size = 'normal',
   highlight = false,
 }: StatsDisplayProps) {
-  const { isResting, activeTime, config, reps, isAlternating } = useStore(
+  const { isResting, activeTime, isDarkMode, reps, isAlternating } = useStore(
     useShallow((s) => ({
       isResting: s.isResting,
       activeTime: s.activeTime,
-      config: s.config,
+      isDarkMode: s.config.theme === 'dark',
       reps: s.reps,
       isAlternating: s.isAlternating,
     }))
@@ -23,10 +23,10 @@ export default function StatsDisplay({
   const textSize =
     size === 'large' ? 'text-9xl' : 'text-3xl sm:text-4xl lg:text-5xl';
   const labelColor = highlight
-    ? config.theme === 'dark'
+    ? isDarkMode
       ? 'text-red-400'
       : 'text-red-600'
-    : config.theme === 'dark'
+    : isDarkMode
       ? 'text-white'
       : 'text-black';
 

@@ -13,7 +13,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
 
   const innerRef = useRef<HTMLDivElement | null>(null);
 
-  const { sliderThreshold, reps, position, config, setSliderThreshold } =
+  const { sliderThreshold, reps, position, isDarkMode, setSliderThreshold } =
     useStore(
       useShallow((s) => ({
         sliderThreshold: s.sliderThreshold,
@@ -27,7 +27,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
             ? s.sliderPositionLeft
             : s.sliderPositionRight
           : s.lastSliderPosition,
-        config: s.config,
+        isDarkMode: s.config.theme === 'dark',
         setSliderThreshold: s.setSliderThreshold,
       }))
     );
@@ -104,17 +104,14 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
   const visibleLinePx = active ? expandedLinePx : baseLinePx;
   const hitboxPx = visibleLinePx + proximityPx * 2;
 
-  const weightColor =
-    config.theme === 'dark'
-      ? 'bg-gradient-to-b from-gray-500 to-gray-600'
-      : 'bg-gradient-to-b from-gray-400 to-gray-500';
-  const thresholdColor =
-    config.theme === 'dark' ? 'bg-green-500' : 'bg-green-600';
-  const dotColor = config.theme === 'dark' ? 'bg-green-300' : 'bg-green-800';
-  const fillColor =
-    config.theme === 'dark'
-      ? 'bg-gradient-to-b from-lime-400 to-lime-500'
-      : 'bg-gradient-to-b from-yellow-300 to-yellow-400';
+  const weightColor = isDarkMode
+    ? 'bg-gradient-to-b from-gray-500 to-gray-600'
+    : 'bg-gradient-to-b from-gray-400 to-gray-500';
+  const thresholdColor = isDarkMode ? 'bg-green-500' : 'bg-green-600';
+  const dotColor = isDarkMode ? 'bg-green-300' : 'bg-green-800';
+  const fillColor = isDarkMode
+    ? 'bg-gradient-to-b from-lime-400 to-lime-500'
+    : 'bg-gradient-to-b from-yellow-300 to-yellow-400';
 
   return (
     <div
@@ -132,7 +129,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
           {[...Array(12)].map((_, i) => (
             <div
               key={i}
-              className={`w-full h-0.5 sm:h-1 rounded ${config.theme === 'dark' ? 'bg-gray-400' : 'bg-gray-500'}`}
+              className={`w-full h-0.5 sm:h-1 rounded ${isDarkMode ? 'bg-gray-400' : 'bg-gray-500'}`}
             />
           ))}
         </div>

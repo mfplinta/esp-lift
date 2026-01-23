@@ -1,7 +1,10 @@
 {
-  "wifi": {
+  "network": {
     "ssid": "YOUR_SSID_HERE",
     "password": "YOUR_PASSWORD_HERE",
     "hostname": "esp-lift.arpa"
+  },
+  "movement": {
+    "debounceInterval": 100
   }
 }

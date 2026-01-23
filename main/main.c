@@ -100,13 +100,15 @@ static inline void monitor_system_info() {
     esp_log_level_set("*", ESP_LOG_NONE);
     printf(ANSI_CURSOR_UP(3) ANSI_CLEAR_LINE
            "(RAM) %.1f / %.1f kB | (Storage) %.1f / %.1f kB\n" ANSI_CLEAR_LINE
-           "(Left encoder) raw_count: %ld, calibrated: %.1f, cal_done: %s\n" ANSI_CLEAR_LINE
-           "(Right encoder) raw_count: %ld, calibrated: %.1f, cal_done: %s\n",
+           "(Left encoder) raw_count: %ld, calibrated: %.1f, cal_done: %s, debounce_ms: "
+           "%d\n" ANSI_CLEAR_LINE
+           "(Right encoder) raw_count: %ld, calibrated: %.1f, cal_done: %s, debounce_ms: %d\n",
            ram_used_kb, ram_total_kb, storage_used_kb, storage_total_kb,
            leftEncoder->state.raw_count, leftEncoder->state.calibrated,
-           leftEncoder->state.cal_state == CAL_DONE ? "yes" : "no", rightEncoder->state.raw_count,
-           rightEncoder->state.calibrated,
-           rightEncoder->state.cal_state == CAL_DONE ? "yes" : "no");
+           leftEncoder->state.cal_state == CAL_DONE ? "yes" : "no",
+           leftEncoder->config.debounce_interval, rightEncoder->state.raw_count,
+           rightEncoder->state.calibrated, rightEncoder->state.cal_state == CAL_DONE ? "yes" : "no",
+           rightEncoder->config.debounce_interval);
     fflush(stdout);
 
     int c = getchar();
@@ -196,15 +198,6 @@ void app_main(void) {
   setvbuf(stdin, NULL, _IONBF, 0);
   setvbuf(stdout, NULL, _IONBF, 0);
 
-  leftEncoder = init_encoder((encoder_config_t) {.pin_a = GPIO_NUM_26,
-                                                 .pin_b = GPIO_NUM_25,
-                                                 .pin_z = GPIO_NUM_33,
-                                                 .on_event_cb = encoder_event_handler});
-  rightEncoder = init_encoder((encoder_config_t) {.pin_a = GPIO_NUM_32,
-                                                  .pin_b = GPIO_NUM_35,
-                                                  .pin_z = GPIO_NUM_34,
-                                                  .on_event_cb = encoder_event_handler});
-
   /* FS */
   // Root
   ESP_ERROR_CHECK(
@@ -222,7 +215,7 @@ void app_main(void) {
                                                           .read_only = true}));
 
   /* Configuration from file */
-  cJSON *config_cjson = cjson_read_from_file("/cfg/config.json");
+  cJSON *config_cjson = cjson_read_from_file("/cfg/settings.json");
   if (config_cjson == NULL) {
     ESP_LOGE("CONFIG", "Failed to load config");
     abort();
@@ -235,7 +228,6 @@ void app_main(void) {
   wifi_config_t wifi_config = {0};
 
   strncpy((char *) wifi_config.sta.ssid, settings.ssid, sizeof(wifi_config.sta.ssid));
-
   strncpy((char *) wifi_config.sta.password, settings.password, sizeof(wifi_config.sta.password));
 
   wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
@@ -243,6 +235,18 @@ void app_main(void) {
   wifi_config.sta.pmf_cfg.required = false;
 
   init_wifi(&wifi_config, settings.hostname);
+
+  /* Encoders */
+  leftEncoder = init_encoder((encoder_config_t) {.pin_a = GPIO_NUM_26,
+                                                 .pin_b = GPIO_NUM_25,
+                                                 .pin_z = GPIO_NUM_33,
+                                                 .debounce_interval = settings.debounce_interval,
+                                                 .on_event_cb = encoder_event_handler});
+  rightEncoder = init_encoder((encoder_config_t) {.pin_a = GPIO_NUM_32,
+                                                  .pin_b = GPIO_NUM_35,
+                                                  .pin_z = GPIO_NUM_34,
+                                                  .debounce_interval = settings.debounce_interval,
+                                                  .on_event_cb = encoder_event_handler});
 
   /* HTTP Server */
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -255,7 +259,7 @@ void app_main(void) {
   ESP_ERROR_CHECK(httpd_start(&server, &config));
   http_api_hardware_register(server);
   http_api_exercises_register(server, "/cfg/exercises.json");
-  http_api_settings_register(server, "/cfg/config.json");
+  http_api_settings_register(server, "/cfg/settings.json");
   http_captiveportalredirect_register(server);
   ws_register(server);
 

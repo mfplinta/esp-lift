@@ -12,12 +12,12 @@ export default function SetHistory() {
   const [view, setView] = useState<'active' | 'days' | 'day-detail'>('active');
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const { isResting, history, config, clearHistory } = useStore(
+  const { isResting, history, isDarkMode, clearHistory } = useStore(
     useShallow((s) => ({
       sets: s.sets,
       isResting: s.isResting,
       history: s.history,
-      config: s.config,
+      isDarkMode: s.config.theme === 'dark',
       reset: s.reset,
       clearHistory: s.clearHistory,
     }))
@@ -96,15 +96,13 @@ export default function SetHistory() {
     (a, b) => new Date(b).getTime() - new Date(a).getTime()
   );
 
-  const bgColor = config.theme === 'dark' ? 'bg-gray-900' : 'bg-gray-100';
-  const cardColor = config.theme === 'dark' ? 'bg-gray-800' : 'bg-white';
-  const borderColor =
-    config.theme === 'dark' ? 'border-gray-800' : 'border-gray-200';
-  const textColor = config.theme === 'dark' ? 'text-gray-400' : 'text-gray-600';
+  const bgColor = isDarkMode ? 'bg-gray-900' : 'bg-gray-100';
+  const cardColor = isDarkMode ? 'bg-gray-800' : 'bg-white';
+  const borderColor = isDarkMode ? 'border-gray-800' : 'border-gray-200';
 
   return (
     <div
-      className="absolute left-6 top-24 bottom-6 hidden lg:block overflow-hidden"
+      className="absolute left-6 top-24 bottom-6 hidden md:block overflow-hidden"
       style={{ width: `${width}px` }}
     >
       <div

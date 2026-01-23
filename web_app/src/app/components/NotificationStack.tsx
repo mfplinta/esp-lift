@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Circle,
 } from 'lucide-react';
+import { useStore } from '../store';
 
 export interface NotificationConfig {
   id: string;
@@ -89,6 +90,8 @@ const NotificationStack = forwardRef<
   const timeoutMap = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map()
   );
+
+  const isDarkMode = useStore((s) => s.config.theme === 'dark');
 
   const dismiss = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
@@ -199,7 +202,7 @@ const NotificationStack = forwardRef<
                 <button
                   onClick={() => dismiss(notification.id)}
                   className={`absolute right-4 p-1.5 rounded-full transition-all opacity-0 group-hover:opacity-100 ${
-                    theme === 'dark'
+                    isDarkMode
                       ? 'hover:bg-gray-800 text-gray-400'
                       : 'hover:bg-gray-100 text-gray-600'
                   }`}

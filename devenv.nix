@@ -82,7 +82,10 @@ in
         -e 's/^.*CONFIG_HTTPD_WS_SUPPORT.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
         -e 's/^CONFIG_MONITOR_BAUD=.*/CONFIG_MONITOR_BAUD=${toString monitorBaudRate}/' \
         -e 's/^CONFIG_ESPTOOLPY_MONITOR_BAUD=.*/CONFIG_ESPTOOLPY_MONITOR_BAUD=${toString monitorBaudRate}/' \
-        -e 's/^CONFIG_ESP_CONSOLE_UART_BAUDRATE=.*/CONFIG_ESP_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}/' \
+        -e 's/^# CONFIG_ESP_CONSOLE_UART_CUSTOM.*/CONFIG_ESP_CONSOLE_UART_CUSTOM=y/' \
+        -e 's/^CONFIG_ESP_CONSOLE_UART_BAUDRATE=.*/CONFIG_ESP_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_ESP_CONSOLE_UART_TX_GPIO=1\nCONFIG_ESP_CONSOLE_UART_RX_GPIO=3/' \
+        -e 's/^# CONFIG_CONSOLE_UART_CUSTOM.*/CONFIG_CONSOLE_UART_CUSTOM=y/' \
+        -e 's/^CONFIG_CONSOLE_UART_BAUDRATE=.*/CONFIG_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_CONSOLE_UART_TX_GPIO=1\nCONFIG_CONSOLE_UART_RX_GPIO=3/' \
         sdkconfig
 
       set_4mb
@@ -106,7 +109,7 @@ in
     )
 
     (
-      [ -f cfg/config.json ] || cp cfg/config.template.json cfg/config.json
+      [ -f cfg/settings.json ] || cp cfg/settings.template.json cfg/settings.json
       cd main
       clang-format -i *.c *.h
     )

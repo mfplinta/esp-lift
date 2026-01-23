@@ -51,7 +51,7 @@ esp_err_t get_exercises_handler(httpd_req_t *req) {
   res = httpd_resp_send(req, json_string, HTTPD_RESP_USE_STRLEN);
 
 cleanup:
-  cJSON_Delete(json);
+  if(json) cJSON_Delete(json);
   if(json_string) free(json_string);
   return res;
 }
@@ -101,8 +101,8 @@ esp_err_t post_exercises_handler(httpd_req_t *req) {
   res = httpd_resp_sendstr(req, "OK");
 
 cleanup:
-  cJSON_Delete(req_json);
-  cJSON_Delete(exercises_json);
+  if(req_json) cJSON_Delete(req_json);
+  if(exercises_json) cJSON_Delete(exercises_json);
   return res;
 }
 
@@ -142,7 +142,7 @@ esp_err_t delete_exercises_handler(httpd_req_t *req) {
   res = httpd_resp_sendstr(req, "OK");
 
 cleanup:
-  cJSON_Delete(json);
+  if(json) cJSON_Delete(json);
   return res;
 }
 

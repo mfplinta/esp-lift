@@ -13,24 +13,30 @@ import useWebSocket from 'react-use-websocket-lite';
 import WallClock from './components/WallClock';
 import { useStore } from './store';
 import SetHistory from './components/SetHistory';
-import { Exercise } from './models';
+import { Exercise, HardwareConfig } from './models';
 import { useShallow } from 'zustand/react/shallow';
+import DebugPanel from './components/DebugPanel';
 
 const MSG_WEBSOCKET_CONNECTING = 'Connecting...';
 const MSG_WEBSOCKET_CONNECTED = 'Connected';
 const MSG_WEBSOCKET_ERROR = 'Error connecting to device';
 
-// const host = window.location.href.split('/')[2]
-const host = '10.0.1.120';
+const host = window.location.href.split('/')[2];
 
 export default function App() {
   const [showConfig, setShowConfig] = useState(false);
+  const [hardwareSettings, setHardwareSettings] = useState<HardwareConfig>({
+    movement: {
+      debounceInterval: 100,
+    },
+  });
 
   // Refs
   const notificationRef = useRef<NotificationHandle>(null);
 
   const {
     config,
+    isDarkMode,
     setSliderPositionLeft,
     setSliderPositionRight,
     setExercises,
@@ -39,20 +45,14 @@ export default function App() {
     hydrateSetHistory,
   } = useStore(
     useShallow((s) => ({
-      selectedExercise: s.selectedExercise,
       config: s.config,
-      repsLeft: s.repsLeft,
-      repsRight: s.repsRight,
+      isDarkMode: s.config.theme === 'dark',
       setSliderPositionLeft: s.setSliderPositionLeft,
       setSliderPositionRight: s.setSliderPositionRight,
       setExercises: s.setExercises,
-      addSetToHistory: s.addSetToHistory,
       toggleTheme: s.toggleTheme,
-      reset: s.reset,
-      completeSet: s.completeSetOrRest,
       hydrateConfig: s.hydrateConfig,
       hydrateSetHistory: s.hydrateSetHistory,
-      startTimer: s.startTimer,
     }))
   );
 
@@ -76,6 +76,22 @@ export default function App() {
       setExercises(data.exercises);
     } catch (e) {
       notify('Failed to fetch exercises', { variant: 'error' });
+    }
+  };
+
+  const fetchHardwareConfig = async () => {
+    try {
+      const response = await fetch('/api/settings');
+      if (!response.ok) {
+        throw new Error(
+          { status: response.status, error: response.statusText }.toString()
+        );
+      }
+
+      const data = await response.json();
+      setHardwareSettings(data);
+    } catch (e) {
+      notify('Failed to fetch settings', { variant: 'error' });
     }
   };
 
@@ -122,22 +138,17 @@ export default function App() {
     }
   };
 
-  const changeWifiSettings = async (ssid: string, password: string) => {
+  const changeHardwareSettings = async (config: HardwareConfig) => {
     try {
       const response = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          wifi: {
-            ssid: ssid,
-            password: password,
-          },
-        }),
+        body: JSON.stringify(config),
       });
       if (!response.ok) {
         throw new Error('Failed to update Wi-Fi settings');
       }
-      notify('Wi-Fi settings updated. Device will restart.', {
+      notify('Hardware settings updated. Device will restart.', {
         variant: 'info',
       });
       await sendRestartCommand();
@@ -146,17 +157,9 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    (async () => {
-      await fetchExercises();
-      hydrateConfig();
-      hydrateSetHistory();
-    })();
-  }, []);
-
   // --- WebSocket ---
   const { readyState } = useWebSocket({
-    url: `/ws`,
+    url: `ws://${host}/ws`,
     onMessage: (e) => {
       const data: {
         name: string;
@@ -192,6 +195,15 @@ export default function App() {
   });
 
   useEffect(() => {
+    (async () => {
+      await fetchHardwareConfig();
+      await fetchExercises();
+      hydrateConfig();
+      hydrateSetHistory();
+    })();
+  }, []);
+
+  useEffect(() => {
     if (readyState === WebSocket.CONNECTING) {
       notify(MSG_WEBSOCKET_CONNECTING, {
         variant: 'info',
@@ -206,7 +218,7 @@ export default function App() {
 
   return (
     <div
-      className={`fixed inset-0 transition-colors duration-300 ${config.theme === 'dark' ? 'bg-black text-white' : 'bg-white text-black'}`}
+      className={`fixed inset-0 transition-colors duration-300 ${isDarkMode ? 'bg-black text-white' : 'bg-white text-black'}`}
     >
       {/* --- Top Bar --- */}
       <header className="w-full px-6 py-3 relative z-50">
@@ -214,13 +226,13 @@ export default function App() {
           <div className="absolute left-0 top-1/2 transform -translate-y-1/2 flex gap-3">
             <button
               onClick={toggleTheme}
-              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${config.theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'}`}
             >
-              {config.theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
+              {isDarkMode ? <Sun size={24} /> : <Moon size={24} />}
             </button>
             <button
               onClick={() => setShowConfig(true)}
-              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${config.theme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}
+              className={`p-3 rounded-full shadow-lg transition-transform hover:scale-105 ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'}`}
             >
               <Settings size={24} />
             </button>
@@ -264,12 +276,16 @@ export default function App() {
       {/* --- Modals & Notifications --- */}
       <ConfigModal
         isOpen={showConfig}
+        hardwareSettings={hardwareSettings}
         onClose={() => setShowConfig(false)}
         onCalibrate={sendCalibrateCommand}
         onRestart={sendRestartCommand}
-        onWifiChange={changeWifiSettings}
+        onHardwareChange={changeHardwareSettings}
       />
       <NotificationStack ref={notificationRef} theme={config.theme} />
+
+      {/* --- Debug Overlay --- */}
+      {config.debugMode && <DebugPanel />}
     </div>
   );
 }

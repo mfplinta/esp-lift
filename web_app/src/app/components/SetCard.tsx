@@ -8,10 +8,10 @@ interface SetCardProps {
 }
 
 export default function SetCard({ record, formatTime }: SetCardProps) {
-  const config = useStore((s) => s.config);
+  const isDarkMode = useStore((s) => s.config.theme === 'dark');
 
-  const cardColor = config.theme === 'dark' ? 'bg-gray-800' : 'bg-white';
-  const textColor = config.theme === 'dark' ? 'text-gray-400' : 'text-gray-600';
+  const cardColor = isDarkMode ? 'bg-gray-800' : 'bg-white';
+  const textColor = isDarkMode ? 'text-gray-400' : 'text-gray-600';
 
   return (
     <div className={`p-3 rounded-lg ${cardColor}`}>
@@ -54,11 +54,11 @@ export function LiveRestCard({
 }: {
   formatTime: (s: number) => string;
 }) {
-  const config = useStore((s) => s.config);
+  const isDarkMode = useStore((s) => s.config.theme === 'dark');
   const activeTime = useStore((s) => s.activeTime);
 
-  const cardColor = config.theme === 'dark' ? 'bg-gray-800' : 'bg-white';
-  const textColor = config.theme === 'dark' ? 'text-gray-400' : 'text-gray-600';
+  const cardColor = isDarkMode ? 'bg-gray-800' : 'bg-white';
+  const textColor = isDarkMode ? 'text-gray-400' : 'text-gray-600';
 
   return (
     <div className={`p-3 rounded-lg border border-blue-500/30 ${cardColor}`}>

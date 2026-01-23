@@ -1,6 +1,6 @@
 import { create, StateCreator } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import { Exercise, SetRecord, Config } from './models';
+import { Exercise, SetRecord, AppConfig } from './models';
 
 type MachineStore = {
   /* Machine */
@@ -31,10 +31,10 @@ type MachineStore = {
   hydrateSetHistory: () => void;
 
   /* Config */
-  config: Config;
+  config: AppConfig;
   isConfigHydrated: boolean;
   hydrateConfig: () => void;
-  setConfig: (config: Partial<Config>) => void;
+  setConfig: (config: Partial<AppConfig>) => void;
   toggleTheme: () => void;
 
   setSelectedExercise: (ex: Exercise) => void;
@@ -134,6 +134,7 @@ const storeCreator: StateCreator<
       : 'light',
     strictMode: false,
     autoCompleteSecs: 0,
+    debugMode: false,
   },
   isConfigHydrated: false,
   hydrateConfig: () => {
@@ -148,7 +149,7 @@ const storeCreator: StateCreator<
     }
     set({ isConfigHydrated: true });
   },
-  setConfig: (config: Partial<Config>) => {
+  setConfig: (config: Partial<AppConfig>) => {
     const merged = { ...get().config, ...config };
     localStorage.setItem('app_settings', JSON.stringify(merged));
     set({ config: merged });

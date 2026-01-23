@@ -9,7 +9,7 @@ managed_components/
 sdkconfig
 sdkconfig.old
 sdkconfig.defaults
-cfg/config.json
+cfg/settings.json
 # React app
 web_app/node_modules
 web_app/dist

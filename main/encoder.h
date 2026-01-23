@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define DEBOUNCE_MS 100
 #define CAL_MIN 0.0
 #define CAL_MAX 100.0
 #define CAL_DEBOUNCE_STEPS 5
@@ -22,6 +21,7 @@ typedef enum { EVENT_ROTATION, EVENT_CALIBRATION_CHANGE } encoder_event_type_t;
 struct encoder_event_t;
 typedef struct {
   gpio_num_t pin_a, pin_b, pin_z;
+  int debounce_interval;
   void (*on_event_cb)(struct encoder_event_t *event);
 } encoder_config_t;
 
@@ -75,7 +75,7 @@ static void event_consumer_task(void *arg) {
 
 static inline void send_callback(encoder_t *enc, encoder_event_type_t type) {
   uint32_t now = xTaskGetTickCountFromISR();
-  uint32_t debounce_ticks = pdMS_TO_TICKS(DEBOUNCE_MS);
+  uint32_t debounce_ticks = pdMS_TO_TICKS(enc->config.debounce_interval);
 
   if ((now - enc->state.last_time) >= debounce_ticks || type == EVENT_CALIBRATION_CHANGE) {
     enc->state.last_time = now;

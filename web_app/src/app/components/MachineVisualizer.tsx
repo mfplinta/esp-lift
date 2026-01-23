@@ -3,11 +3,11 @@ import { useStore } from '../store';
 import { useShallow } from 'zustand/react/shallow';
 
 export default function MachineVisualizer() {
-  const { repsLeft, repsRight, config, isAlternating } = useStore(
+  const { repsLeft, repsRight, isDarkMode, isAlternating } = useStore(
     useShallow((s) => ({
       repsLeft: s.repsLeft,
       repsRight: s.repsRight,
-      config: s.config,
+      isDarkMode: s.config.theme === 'dark',
       isAlternating: s.isAlternating,
     }))
   );
@@ -19,14 +19,14 @@ export default function MachineVisualizer() {
         <div className="flex gap-6 w-full justify-center mb-1">
           <div className="w-32 sm:w-40 text-center">
             <span
-              className={`text-4xl font-semibold ${config.theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}
+              className={`text-4xl font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
             >
               {repsLeft || 0}
             </span>
           </div>
           <div className="w-32 sm:w-40 text-center">
             <span
-              className={`text-4xl font-semibold ${config.theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}
+              className={`text-4xl font-semibold ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
             >
               {repsRight || 0}
             </span>

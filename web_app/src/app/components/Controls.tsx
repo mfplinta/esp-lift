@@ -1,12 +1,11 @@
-import { CSSProperties } from 'react';
 import { useStore } from '../store';
 import { useShallow } from 'zustand/react/shallow';
 
 export default function Controls() {
-  const { sets, config, hasReps, reset, completeSet } = useStore(
+  const { sets, isDarkMode, hasReps, reset, completeSet } = useStore(
     useShallow((s) => ({
       sets: s.sets,
-      config: s.config,
+      isDarkMode: s.config.theme === 'dark',
       hasReps: s.reps > 0,
       reset: s.reset,
       completeSet: s.completeSetOrRest,
@@ -16,23 +15,22 @@ export default function Controls() {
   const buttonBaseClass =
     'px-6 sm:px-8 py-3 sm:py-4 rounded-xl font-semibold text-base sm:text-lg transition-all duration-200 shadow-lg hover:shadow-xl active:scale-95 whitespace-nowrap';
 
-  const primaryButton =
-    config.theme === 'dark'
-      ? 'bg-white text-black hover:bg-gray-200'
-      : 'bg-black text-white hover:bg-gray-800';
+  const primaryEnabled = isDarkMode
+    ? 'bg-white/95 text-black hover:bg-white'
+    : 'bg-black/95 text-white hover:bg-black';
 
-  const secondaryButton =
-    config.theme === 'dark'
-      ? 'bg-gray-800 text-white hover:bg-gray-700 border-2 border-gray-700'
-      : 'bg-gray-200 text-black hover:bg-gray-300 border-2 border-gray-300';
+  const primaryDisabled = isDarkMode
+    ? 'bg-white/60 text-black'
+    : 'bg-black/60 text-white';
 
-  const borderColor =
-    config.theme === 'dark' ? 'border-gray-800' : 'border-gray-200';
+  const secondaryButton = isDarkMode
+    ? 'bg-gray-800 text-white hover:bg-gray-700 border-2 border-gray-700'
+    : 'bg-gray-200 text-black hover:bg-gray-300 border-2 border-gray-300';
 
   return (
     <div className="flex flex-col gap-3">
       <div
-        className={`font-bold text-center whitespace-nowrap leading-none ${config.theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}
+        className={`font-bold text-center whitespace-nowrap leading-none ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}
         style={{
           fontSize: '48px',
           marginBottom: '0.2em',
@@ -44,9 +42,7 @@ export default function Controls() {
       <button
         onClick={completeSet}
         disabled={!hasReps}
-        className={`${buttonBaseClass} ${primaryButton} ${
-          !hasReps ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-        }`}
+        className={`${buttonBaseClass} ${hasReps ? primaryEnabled : primaryDisabled} backdrop-blur-[4px]`}
       >
         Complete Set
       </button>

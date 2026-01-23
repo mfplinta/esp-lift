@@ -3,6 +3,7 @@ import { ChevronDown, Plus, X } from 'lucide-react';
 import { useStore } from '../store';
 import { Exercise } from '../models';
 import { useShallow } from 'zustand/react/shallow';
+import { Switch } from './ui/switch';
 
 interface ExerciseSelectorProps {
   onAddExercise: (ex: Exercise) => void;
@@ -20,14 +21,15 @@ export default function ExerciseSelector({
   const [type, setType] = useState<'singular' | 'alternating'>('singular');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { exercises, selectedExercise, config, setSelectedExercise } = useStore(
-    useShallow((s) => ({
-      exercises: s.exercises,
-      selectedExercise: s.selectedExercise,
-      config: s.config,
-      setSelectedExercise: s.setSelectedExercise,
-    }))
-  );
+  const { exercises, selectedExercise, isDarkMode, setSelectedExercise } =
+    useStore(
+      useShallow((s) => ({
+        exercises: s.exercises,
+        selectedExercise: s.selectedExercise,
+        isDarkMode: s.config.theme === 'dark',
+        setSelectedExercise: s.setSelectedExercise,
+      }))
+    );
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -69,7 +71,7 @@ export default function ExerciseSelector({
           setIsOpen(!isOpen);
         }}
         className={`flex items-center gap-2 px-4 py-3 rounded-lg transition-all duration-200 bg-opacity-90 ${
-          config.theme === 'dark'
+          isDarkMode
             ? 'hover:bg-gray-900 bg-gray-900'
             : 'hover:bg-gray-100 bg-white'
         }`}
@@ -87,7 +89,7 @@ export default function ExerciseSelector({
       {isOpen && (
         <div
           className={`absolute left-0 right-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-2 w-full sm:w-64 max-h-[80vh] rounded-xl shadow-2xl overflow-hidden z-50 backdrop-blur-md ${
-            config.theme === 'dark'
+            isDarkMode
               ? 'bg-gray-900 bg-opacity-95 border border-gray-700'
               : 'bg-white bg-opacity-95 border border-gray-300'
           }`}
@@ -99,10 +101,10 @@ export default function ExerciseSelector({
                 key={exercise.name}
                 className={`group relative w-full transition-colors ${
                   selectedExercise?.name === exercise.name
-                    ? config.theme === 'dark'
+                    ? isDarkMode
                       ? 'bg-gray-800'
                       : 'bg-gray-200'
-                    : config.theme === 'dark'
+                    : isDarkMode
                       ? 'hover:bg-gray-800'
                       : 'hover:bg-gray-100'
                 }`}
@@ -118,9 +120,7 @@ export default function ExerciseSelector({
                     <span className="font-medium">{exercise.name}</span>
                     <span
                       className={`text-sm transition-opacity ${
-                        config.theme === 'dark'
-                          ? 'text-gray-400'
-                          : 'text-gray-600'
+                        isDarkMode ? 'text-gray-400' : 'text-gray-600'
                       } ${exercises.length > 1 ? 'opacity-0 group-hover:opacity-100' : ''}`}
                     >
                       {exercise.thresholdPercentage.toFixed(0)}%
@@ -136,7 +136,7 @@ export default function ExerciseSelector({
                       onDeleteExercise(exercise.name);
                     }}
                     className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${
-                      config.theme === 'dark'
+                      isDarkMode
                         ? 'hover:bg-red-900 hover:text-red-300'
                         : 'hover:bg-red-100 hover:text-red-600'
                     }`}
@@ -152,7 +152,7 @@ export default function ExerciseSelector({
             <button
               onClick={() => setShowAddDialog(true)}
               className={`w-full px-4 py-3 text-left transition-colors flex items-center gap-2 border-t ${
-                config.theme === 'dark'
+                isDarkMode
                   ? 'hover:bg-gray-800 border-gray-800'
                   : 'hover:bg-gray-100 border-gray-200'
               }`}
@@ -166,7 +166,7 @@ export default function ExerciseSelector({
           {showAddDialog && (
             <div
               className={`border-t p-4 ${
-                config.theme === 'dark'
+                isDarkMode
                   ? 'border-gray-800 bg-gray-850'
                   : 'border-gray-200 bg-gray-50'
               }`}
@@ -177,9 +177,7 @@ export default function ExerciseSelector({
                 <button
                   onClick={() => setShowAddDialog(false)}
                   className={`p-2 rounded-lg ${
-                    config.theme === 'dark'
-                      ? 'hover:bg-gray-800'
-                      : 'hover:bg-gray-100'
+                    isDarkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
                   }`}
                 >
                   <X size={20} />
@@ -197,7 +195,7 @@ export default function ExerciseSelector({
                 onChange={(e) => setNewExerciseName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddExercise()}
                 className={`w-full px-3 py-2 rounded-lg mb-3 border ${
-                  config.theme === 'dark'
+                  isDarkMode
                     ? 'bg-gray-900 border-gray-700 text-white placeholder-gray-500'
                     : 'bg-white border-gray-300 text-black placeholder-gray-400'
                 }`}
@@ -216,12 +214,16 @@ export default function ExerciseSelector({
                   value={newThreshold}
                   onChange={(e) => setNewThreshold(Number(e.target.value))}
                   className={`w-full h-2 rounded-lg appearance-none ${
-                    config.theme === 'dark' ? 'bg-gray-700' : 'bg-gray-300'
-                  }`}
-                  style={{
-                    accentColor:
-                      config.theme === 'dark' ? '#10b981' : '#059669',
-                  }}
+                    isDarkMode ? 'bg-gray-700' : 'bg-gray-300'
+                  } [&::-webkit-slider-thumb]:appearance-none
+                    [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:w-4
+                    [&::-webkit-slider-thumb]:rounded-full
+                    [&::-webkit-slider-thumb]:bg-current
+                    [&::-webkit-slider-thumb]:transition-transform
+                    [&::-webkit-slider-thumb]:duration-150
+                    active:[&::-webkit-slider-thumb]:scale-125
+                    `}
                 />
               </div>
 
@@ -234,41 +236,26 @@ export default function ExerciseSelector({
                     className={`text-sm ${
                       type === 'singular'
                         ? 'font-semibold'
-                        : config.theme === 'dark'
+                        : isDarkMode
                           ? 'text-gray-500'
                           : 'text-gray-400'
                     }`}
                   >
                     Singular
                   </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setType(type === 'singular' ? 'alternating' : 'singular')
+                  <Switch
+                    id="auto-set"
+                    checked={type === 'alternating'}
+                    onCheckedChange={(checked) =>
+                      setType(checked ? 'alternating' : 'singular')
                     }
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      type === 'alternating'
-                        ? config.theme === 'dark'
-                          ? 'bg-green-600'
-                          : 'bg-green-500'
-                        : config.theme === 'dark'
-                          ? 'bg-gray-700'
-                          : 'bg-gray-300'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        type === 'alternating'
-                          ? 'translate-x-6'
-                          : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                    className="ml-4"
+                  />
                   <span
                     className={`text-sm ${
                       type === 'alternating'
                         ? 'font-semibold'
-                        : config.theme === 'dark'
+                        : isDarkMode
                           ? 'text-gray-500'
                           : 'text-gray-400'
                     }`}
@@ -282,7 +269,7 @@ export default function ExerciseSelector({
                 <button
                   onClick={handleAddExercise}
                   className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                    config.theme === 'dark'
+                    isDarkMode
                       ? 'bg-white text-black hover:bg-gray-200'
                       : 'bg-black text-white hover:bg-gray-800'
                   }`}
@@ -295,7 +282,7 @@ export default function ExerciseSelector({
                     setNewExerciseName('');
                   }}
                   className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                    config.theme === 'dark'
+                    isDarkMode
                       ? 'bg-gray-800 text-white hover:bg-gray-700'
                       : 'bg-gray-200 text-black hover:bg-gray-300'
                   }`}

@@ -12,8 +12,20 @@ export interface Exercise {
   type: 'singular' | 'alternating';
 }
 
-export interface Config {
+export interface AppConfig {
   theme: 'light' | 'dark';
   strictMode: boolean;
   autoCompleteSecs: number;
+  debugMode: boolean;
+}
+
+export interface HardwareConfig {
+  network?: {
+    ssid?: string;
+    password?: string;
+    hostname?: string;
+  };
+  movement?: {
+    debounceInterval?: number;
+  };
 }
