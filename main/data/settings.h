@@ -36,7 +36,7 @@ int config_load_settings(cJSON *root, settings_t *settings) {
     settings->debounce_interval = cJSON_IsNumber(debounce_interval) ? debounce_interval->valueint : DEBOUNCE_MS;
   }
 
-  return 1;
+  return EXIT_SUCCESS;
 }
 
 int config_change_settings(cJSON *root, cJSON *patch) {
@@ -68,7 +68,7 @@ int config_change_settings(cJSON *root, cJSON *patch) {
         cJSON_ReplaceItemInObject(dst, "debounceInterval", cJSON_Duplicate(item, 1));
   }
 
-  return 1;
+  return EXIT_SUCCESS;
 }
 
 /**
@@ -79,10 +79,10 @@ int config_sanitize_settings(cJSON *root) {
   if(!(network = cJSON_GetObjectItem(root, "network"))) {
     cJSON_DeleteItemFromObject(network, "ssid");
     cJSON_DeleteItemFromObject(network, "password");
-    return 0;
+    return EXIT_FAILURE;
   }
 
-  return 1;
+  return EXIT_SUCCESS;
 }
 
 #endif

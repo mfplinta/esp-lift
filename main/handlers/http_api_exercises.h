@@ -87,13 +87,13 @@ esp_err_t post_exercises_handler(httpd_req_t *req) {
   }
 
   /* Add exercise */
-  if (!exercises_add(exercises_json, name->valuestring, threshold->valuedouble, exercise_type)) {
+  if (exercises_add(exercises_json, name->valuestring, threshold->valuedouble, exercise_type)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to add exercise");
     goto cleanup;
   }
 
   /* Save */
-  if (!cjson_save_to_file(exercises_json, exercises_json_file)) {
+  if (cjson_save_to_file(exercises_json, exercises_json_file)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save exercises on server");
     goto cleanup;
   }
@@ -128,13 +128,13 @@ esp_err_t delete_exercises_handler(httpd_req_t *req) {
   char name_decoded[128];
   url_decode(name_decoded, name_value);
 
-  if (!exercises_remove(json, name_decoded)) {
+  if (exercises_remove(json, name_decoded)) {
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Exercise not found");
     goto cleanup;
   }
 
   /* Save */
-  if (!cjson_save_to_file(json, exercises_json_file)) {
+  if (cjson_save_to_file(json, exercises_json_file)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save exercises on server");
     goto cleanup;
   }

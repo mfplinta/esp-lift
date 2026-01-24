@@ -28,6 +28,7 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filena
 }
 
 esp_err_t path_handler(httpd_req_t *req) {
+  esp_err_t ret = ESP_FAIL;
   const char *base_path = (const char *) req->user_ctx;
   char filepath[600];
 
@@ -43,7 +44,7 @@ esp_err_t path_handler(httpd_req_t *req) {
   if (!fd) {
     ESP_LOGE("HTTP_FILESERVER", "Failed to read existing file : %s", filepath);
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
-    return ESP_FAIL;
+    goto cleanup;
   }
 
   set_content_type_from_file(req, filepath);
@@ -52,18 +53,19 @@ esp_err_t path_handler(httpd_req_t *req) {
   if (!chunk) {
     ESP_LOGE("HTTP_FILESERVER", "Failed to allocate memory for chunk");
     fclose(fd);
-    return ESP_ERR_NO_MEM;
+    ret = ESP_ERR_NO_MEM;
+    goto cleanup;
   }
 
   size_t chunksize;
   do {
     chunksize = fread(chunk, 1, SCRATCH_BUFSIZE, fd);
     if (chunksize > 0) {
-      if (httpd_resp_send_chunk(req, chunk, chunksize) != ESP_OK) {
+      if ((ret = httpd_resp_send_chunk(req, chunk, chunksize))) {
         fclose(fd);
         free(chunk);
         ESP_LOGE("HTTP_FILESERVER", "File sending failed!");
-        return ESP_FAIL;
+        goto cleanup;
       }
     }
   } while (chunksize != 0);
@@ -71,8 +73,10 @@ esp_err_t path_handler(httpd_req_t *req) {
   free(chunk);
   fclose(fd);
 
-  httpd_resp_send_chunk(req, NULL, 0);
-  return ESP_OK;
+  ret = httpd_resp_send_chunk(req, NULL, 0);
+
+cleanup:
+  return ret;
 }
 
 #endif

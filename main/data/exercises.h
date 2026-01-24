@@ -31,7 +31,7 @@ static exercise_type_t exercise_type_from_string(const char *type) {
 int exercises_add(cJSON *root, const char *name, double thresholdPercentage, exercise_type_t type) {
   cJSON *exercises = cJSON_GetObjectItemCaseSensitive(root, "exercises");
   if (!cJSON_IsArray(exercises)) {
-    return 0;
+    return EXIT_FAILURE;
   }
 
   cJSON *exercise = NULL;
@@ -56,7 +56,7 @@ int exercises_add(cJSON *root, const char *name, double thresholdPercentage, exe
                                   cJSON_CreateString(exercise_type_to_string(type)));
       }
 
-      return 1;
+      return EXIT_SUCCESS;
     }
   }
 
@@ -66,13 +66,13 @@ int exercises_add(cJSON *root, const char *name, double thresholdPercentage, exe
   cJSON_AddStringToObject(new_exercise, "type", exercise_type_to_string(type));
   cJSON_AddItemToArray(exercises, new_exercise);
 
-  return 1;
+  return EXIT_SUCCESS;
 }
 
 int exercises_remove(cJSON *root, const char *name) {
   cJSON *exercises = cJSON_GetObjectItemCaseSensitive(root, "exercises");
   if (!cJSON_IsArray(exercises)) {
-    return 0;
+    return EXIT_FAILURE;
   }
 
   cJSON *exercise = NULL;
@@ -84,13 +84,13 @@ int exercises_remove(cJSON *root, const char *name) {
     if (cJSON_IsString(name_item) && name_item->valuestring != NULL &&
         strcmp(name_item->valuestring, name) == 0) {
       cJSON_DeleteItemFromArray(exercises, index);
-      return 1;
+      return EXIT_SUCCESS;
     }
 
     index++;
   }
 
-  return 0;
+  return EXIT_SUCCESS;
 }
 
 #endif

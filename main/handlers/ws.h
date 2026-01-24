@@ -32,9 +32,9 @@ void ws_async_send(void *arg) {
   size_t fds = max_clients;
   int client_fds[max_clients];
 
-  esp_err_t ret = httpd_get_client_list(resp_arg->hd, &fds, client_fds);
+  esp_err_t ret;
 
-  if (ret != ESP_OK) {
+  if ((ret = httpd_get_client_list(resp_arg->hd, &fds, client_fds))) {
     goto cleanup;
   }
 
@@ -54,7 +54,7 @@ cleanup:
  * Frees resp_arg
  */
 void ws_send_message(resp_arg_t* resp_arg) {
-  if (httpd_queue_work(resp_arg->hd, ws_async_send, resp_arg) != ESP_OK) {
+  if (httpd_queue_work(resp_arg->hd, ws_async_send, resp_arg)) {
     ESP_LOGE("WS", "Could not queue message");
     free(resp_arg->data);
     free(resp_arg);
@@ -67,37 +67,36 @@ esp_err_t ws_handler(httpd_req_t *req) {
     return ESP_OK;
   }
 
+  esp_err_t ret;
+  uint8_t *buf = NULL;
+
   httpd_ws_frame_t ws_pkt;
   memset(&ws_pkt, 0, sizeof(httpd_ws_frame_t));
 
-  esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
-  if (ret != ESP_OK) {
-    return ret;
+  if ((ret = httpd_ws_recv_frame(req, &ws_pkt, 0))) {
+    goto cleanup;
   }
 
   if (ws_pkt.type == HTTPD_WS_TYPE_TEXT) {
     ESP_LOGI("WS", "Received ws text of length %d", ws_pkt.len);
 
-    uint8_t *buf = NULL;
-
     if (ws_pkt.len > 0) {
-      buf = (uint8_t*) calloc(1, ws_pkt.len + 1);
-      if (buf == NULL) {
-        return ESP_ERR_NO_MEM;
+      if ((buf = (uint8_t*) calloc(1, ws_pkt.len + 1))) {
+        ret = ESP_ERR_NO_MEM;
+        goto cleanup;
       }
       ws_pkt.payload = buf;
-      ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-      if (ret != ESP_OK) {
+      if ((ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len))) {
         ESP_LOGE("WS", "httpd_ws_recv_frame failed with %d", ret);
       }
-      free(buf);
-      return ret;
     }
   } else {
     ESP_LOGW("WS", "Unsupported ws frame type %d", ws_pkt.type);
   }
 
-  return ESP_OK;
+cleanup:
+  if(buf) free(buf);
+  return ret;
 }
 
 #endif

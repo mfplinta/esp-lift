@@ -125,13 +125,13 @@ cJSON *cjson_read_from_file(const char *path) {
 int cjson_save_to_file(const cJSON *root, const char *path) {
   char *json_string = cJSON_PrintUnformatted(root);
   if (json_string == NULL) {
-    return 0;
+    return EXIT_FAILURE;
   }
 
   FILE *file = fopen(path, "wb");
   if (file == NULL) {
     free(json_string);
-    return 0;
+    return EXIT_FAILURE;
   }
 
   size_t length = strlen(json_string);

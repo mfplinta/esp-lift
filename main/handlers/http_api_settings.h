@@ -36,7 +36,7 @@ esp_err_t get_settings_handler(httpd_req_t *req) {
   }
 
   /* Remove sensitive */
-  if(!config_sanitize_settings(json)) {
+  if(config_sanitize_settings(json)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to sanitize settings");
     goto cleanup;
   }
@@ -63,23 +63,23 @@ esp_err_t post_settings_handler(httpd_req_t *req) {
   cJSON *settings_json = NULL;
   cJSON *req_json = NULL;
 
-  if(!(settings_json = cjson_read_from_file(settings_json_file))) {
+  if((settings_json = cjson_read_from_file(settings_json_file))) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Cannot read settings file");
     goto cleanup;
   }
 
-  if (!(req_json = httpd_read_json_body(req))) {
+  if ((req_json = httpd_read_json_body(req))) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
     goto cleanup;
   }
 
-  if(!config_change_settings(settings_json, req_json)) {
+  if(config_change_settings(settings_json, req_json)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to parse settings request");
     goto cleanup;
   }
 
   /* Persist */
-  if (!cjson_save_to_file(settings_json, settings_json_file)) {
+  if (cjson_save_to_file(settings_json, settings_json_file)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save settings on server");
     goto cleanup;
   }
