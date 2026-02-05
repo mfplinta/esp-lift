@@ -1,7 +1,7 @@
 #ifndef ENCODER_H
 #define ENCODER_H
 
-#include "driver/gpio.h"
+#include <driver/gpio.h>
 #include <esp_attr.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>

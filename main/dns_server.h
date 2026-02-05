@@ -1,8 +1,8 @@
 #ifndef DNS_SERVER_H
 #define DNS_SERVER_H
 
-#include "lwip/ip_addr.h"
-#include "lwip/udp.h"
+#include <lwip/ip_addr.h>
+#include <lwip/udp.h>
 #include <string.h>
 
 #define DNS_PORT 53

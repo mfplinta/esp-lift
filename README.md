@@ -12,6 +12,25 @@ ESP32-based rep counter for cable machines.
 - Calibrates with a simple cable pull across the machine's range-of-motion.
 - Stores workout history in the browser's local storage, with support for exporting.
 
+## Flashing
+
+**Method 1:** 
+
+- Visit [ESP Web Tool](https://esptool.spacehuhn.com/).
+- Set the baud rate to a higher value if desired and connect to ESP32.
+- Change the list so there is a single item with offset 0x0 and upload the .bin file from Releases.
+- Click "Write", and wait until completion.
+- Reset the board and enjoy.
+
+**Method 2:** In any Python environment with pip, run:
+
+```sh
+pip install esptool
+
+# Change COM_PORT with either the COM port shown in Device Manager on Windows, or /dev/ttyUSB0 on Linux
+esptool -p COM_PORT -b 921600 write_flash --flash_mode dio --flash_size detect --flash_freq 40m 0x0 4mb.bin
+```
+
 ## How to build
 
 First, set up Wi-Fi credentials and defaults under the `cfg` directory.
@@ -96,16 +115,22 @@ flowchart TB
     </td>
     <td align="center" style="width: 33%; vertical-align: top;">
       <img src="imgs/pulley.jpg" alt="ESP32" width="200"><br>
-      2x V-Groove step pulleys. Ensure it has a bore of 6mm
+      2x U-Grooved pulleys. Ensure it has a bore of 6mm, and a size of 40mm or more
     </td>
     <td align="center" style="width: 33%; vertical-align: top;">
       <img src="imgs/cable.jpg" alt="OMRON Encoder" width="200"><br>
       Your cable machine
     </td>
   </tr>
+  <tr>
+    <td></td>
+    <td align="center" style="width: 33%; vertical-align: top;">
+      <img src="imgs/bracket.jpg" alt="ESP32" width="200"><br>
+      2x 4-hole 90-degree angle strut brackets
+    </td>
+    <td></td>
+  </tr>
 </table>
-
-> You will also need a way to affix the encoders to a stable base in your cable machine. I will leave that to you.
 
 ## Wiring
 

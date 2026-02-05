@@ -1,12 +1,12 @@
-#include "driver/gpio.h"
-#include "driver/uart.h"
-#include "driver/uart_vfs.h"
-#include "esp_attr.h"
-#include "esp_littlefs.h"
-#include "esp_system.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
-#include "freertos/task.h"
+#include <driver/gpio.h>
+#include <driver/uart.h>
+#include <driver/uart_vfs.h>
+#include <esp_attr.h>
+#include <esp_littlefs.h>
+#include <esp_system.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <esp_http_server.h>
@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <esp_log.h>
 
 #include "data/settings.h"
 #include "encoder.h"
@@ -28,7 +29,6 @@
 #include "handlers/ws.h"
 #include "utils.h"
 #include "wifi.h"
-#include <esp_log.h>
 
 #define ANSI_CURSOR_UP(n) "\033[" #n "A"
 #define ANSI_CLEAR_LINE "\033[2K\r"
