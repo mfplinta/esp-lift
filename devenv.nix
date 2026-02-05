@@ -17,6 +17,7 @@ in
 
     BUILD_ONLY=0
     FLASH_SIZE=""
+    MERGE_FLAG=""
     
     while [ "$#" -gt 0 ]; do
       case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
@@ -34,6 +35,18 @@ in
             exit 1
           fi
           FLASH_SIZE="$(echo "$2" | tr '[:upper:]' '[:lower:]')"
+          shift 2
+          ;;
+        --merge-flag=*)
+          MERGE_FLAG="''${1#*=}"
+          shift
+          ;;
+        --merge-flag)
+          if [ -z "$2" ]; then
+            echo "Error: --merge-flag requires a value"
+            exit 1
+          fi
+          MERGE_FLAG="$2"
           shift 2
           ;;
         *)
@@ -115,6 +128,12 @@ in
     )
 
     idf.py build
+
+    if [ -n "$MERGE_FLAG" ]; then
+      idf.py merge-bin $MERGE_FLAG
+    else
+      idf.py merge-bin
+    fi
 
     if [ "$BUILD_ONLY" -eq 0 ]; then
       idf.py -b ${toString programmingBaudRate} flash
