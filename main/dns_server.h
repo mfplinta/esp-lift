@@ -13,8 +13,7 @@ static ip_addr_t reply_ip;
 
 static void dns_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr,
                      u16_t port) {
-  if (!p)
-    return;
+  if (!p) return;
 
   uint8_t *req = (uint8_t *) p->payload;
 

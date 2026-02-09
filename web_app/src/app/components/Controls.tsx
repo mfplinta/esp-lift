@@ -2,9 +2,8 @@ import { useStore } from '../store';
 import { useShallow } from 'zustand/react/shallow';
 
 export default function Controls() {
-  const { sets, isDarkMode, hasReps, reset, completeSet } = useStore(
+  const { isDarkMode, hasReps, reset, completeSet } = useStore(
     useShallow((s) => ({
-      sets: s.sets,
       isDarkMode: s.config.theme === 'dark',
       hasReps: s.reps > 0,
       reset: s.reset,
@@ -29,16 +28,6 @@ export default function Controls() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div
-        className={`font-bold text-center whitespace-nowrap leading-none ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}
-        style={{
-          fontSize: '48px',
-          marginBottom: '0.2em',
-        }}
-      >
-        Sets: {sets}
-      </div>
-
       <button
         onClick={completeSet}
         disabled={!hasReps}

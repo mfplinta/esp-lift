@@ -10,7 +10,7 @@ export default function WallClock() {
   }, []);
 
   return (
-    <div className="flex items-center gap-2 font-semibold text-2xl select-none">
+    <div className="flex items-center gap-2 font-semibold text-2xl select-none pr-3">
       <Clock size={24} />
       {currentTime.toLocaleTimeString([], {
         hour: 'numeric',

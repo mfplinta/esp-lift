@@ -12,5 +12,11 @@ export function initMachineStoreSubscriptions() {
       (v, prev) => {
         localStorage.setItem('app_settings', JSON.stringify(v));
       }
+    ),
+    useStore.subscribe(
+      (s) => s.users,
+      (v, prev) => {
+        localStorage.setItem('users', JSON.stringify(v));
+      }
     ));
 }

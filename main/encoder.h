@@ -54,10 +54,8 @@ typedef struct encoder_event_t {
 } encoder_event_t;
 
 static inline rotation_dir_t detect_dir(int32_t delta) {
-  if (delta > 0)
-    return DIR_POSITIVE;
-  if (delta < 0)
-    return DIR_NEGATIVE;
+  if (delta > 0) return DIR_POSITIVE;
+  if (delta < 0) return DIR_NEGATIVE;
   return DIR_NONE;
 }
 
@@ -66,8 +64,7 @@ static void event_consumer_task(void *arg) {
   encoder_event_t event;
 
   while (1) {
-    if (!xQueueReceive(queue, &event, portMAX_DELAY))
-      continue;
+    if (!xQueueReceive(queue, &event, portMAX_DELAY)) continue;
 
     event.source->config.on_event_cb(&event);
   }
@@ -93,8 +90,7 @@ static inline void set_cal_state(encoder_t *encoder, calibration_state_t cal_sta
 }
 
 static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
-  if (delta_raw == 0)
-    return;
+  if (delta_raw == 0) return;
 
   rotation_dir_t dir = detect_dir(delta_raw);
   int32_t logical = enc->state.raw_count + enc->state.offset;
@@ -112,8 +108,7 @@ static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
     break;
 
   case CAL_SEEK_MAX:
-    if (abs_dist > enc->state.max_distance)
-      enc->state.max_distance = abs_dist;
+    if (abs_dist > enc->state.max_distance) enc->state.max_distance = abs_dist;
 
     if (dir == enc->state.cal_dir) {
       enc->state.reverse_accum = 0;
@@ -167,8 +162,7 @@ static void IRAM_ATTR rotation_handler(void *arg) {
 
 static void IRAM_ATTR reset_handler(void *arg) {
   encoder_t *enc = (encoder_t *) arg;
-  if (enc->state.cal_state < CAL_DONE)
-    return;
+  if (enc->state.cal_state < CAL_DONE) return;
 
   int32_t logical_before = enc->state.raw_count + enc->state.offset;
 
@@ -198,8 +192,7 @@ encoder_t *init_encoder(encoder_config_t enc_config) {
   gpio_config(&io_conf);
 
   encoder_t *enc = calloc(1, sizeof(encoder_t));
-  if (!enc)
-    return NULL;
+  if (!enc) return NULL;
 
   enc->config = enc_config;
   enc->state.raw_count = 0;

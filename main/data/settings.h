@@ -77,10 +77,11 @@ int config_change_settings(cJSON *root, cJSON *patch) {
 int config_sanitize_settings(cJSON *root) {
   cJSON *network = NULL;
   if(!(network = cJSON_GetObjectItem(root, "network"))) {
-    cJSON_DeleteItemFromObject(network, "ssid");
-    cJSON_DeleteItemFromObject(network, "password");
     return EXIT_FAILURE;
   }
+
+  cJSON_DeleteItemFromObject(network, "ssid");
+  cJSON_DeleteItemFromObject(network, "password");
 
   return EXIT_SUCCESS;
 }

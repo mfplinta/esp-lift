@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Sun, Moon, Settings, Clock, Wifi, Dumbbell } from 'lucide-react';
+import { Sun, Moon, Settings, Wifi, Dumbbell } from 'lucide-react';
 import MachineVisualizer from '@/app/components/MachineVisualizer';
 import StatsDisplay from '@/app/components/StatsDisplay';
 import Controls from '@/app/components/Controls';
@@ -16,6 +16,8 @@ import SetHistory from './components/SetHistory';
 import { Exercise, HardwareConfig } from './models';
 import { useShallow } from 'zustand/react/shallow';
 import DebugPanel from './components/DebugPanel';
+import UserSelection from './components/UserSelection';
+import UserAvatarButton from './components/UserAvatarButton';
 
 const MSG_WEBSOCKET_CONNECTING = 'Connecting...';
 const MSG_WEBSOCKET_CONNECTED = 'Connected';
@@ -25,6 +27,7 @@ const host = window.location.href.split('/')[2];
 
 export default function App() {
   const [showConfig, setShowConfig] = useState(false);
+  const [showSelector, setShowSelector] = useState(false);
   const [hardwareSettings, setHardwareSettings] = useState<HardwareConfig>({
     movement: {
       debounceInterval: 100,
@@ -43,6 +46,7 @@ export default function App() {
     toggleTheme,
     hydrateConfig,
     hydrateSetHistory,
+    hydrateUsers,
   } = useStore(
     useShallow((s) => ({
       config: s.config,
@@ -53,6 +57,7 @@ export default function App() {
       toggleTheme: s.toggleTheme,
       hydrateConfig: s.hydrateConfig,
       hydrateSetHistory: s.hydrateSetHistory,
+      hydrateUsers: s.hydrateUsers,
     }))
   );
 
@@ -200,6 +205,7 @@ export default function App() {
       await fetchExercises();
       hydrateConfig();
       hydrateSetHistory();
+      hydrateUsers();
     })();
   }, []);
 
@@ -245,9 +251,9 @@ export default function App() {
             />
           </div>
 
-          {/* Right: wall clock, only shown on sm+ */}
           <div className="hidden sm:flex absolute right-0 top-1/2 transform -translate-y-1/2">
             <WallClock />
+            <UserAvatarButton onClick={() => setShowSelector(true)} />
           </div>
         </div>
       </header>
@@ -281,6 +287,10 @@ export default function App() {
         onCalibrate={sendCalibrateCommand}
         onRestart={sendRestartCommand}
         onHardwareChange={changeHardwareSettings}
+      />
+      <UserSelection
+        isOpen={showSelector}
+        onClose={() => setShowSelector(false)}
       />
       <NotificationStack ref={notificationRef} theme={config.theme} />
 

@@ -20,5 +20,5 @@ SpaceBeforeParens: ControlStatements
 SpacesInParentheses: false
 SpaceAfterCStyleCast: true
 
-AllowShortIfStatementsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: true
 AllowShortLoopsOnASingleLine: false

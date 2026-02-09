@@ -4,6 +4,12 @@ export interface SetRecord {
   duration: number;
   timestamp: number;
   exerciseName: string;
+  userName?: string;
+}
+
+export interface User {
+  name: string;
+  color: string;
 }
 
 export interface Exercise {

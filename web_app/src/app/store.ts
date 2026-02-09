@@ -1,6 +1,6 @@
 import { create, StateCreator } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import { Exercise, SetRecord, AppConfig } from './models';
+import { Exercise, SetRecord, AppConfig, User } from './models';
 
 type MachineStore = {
   /* Machine */
@@ -36,6 +36,15 @@ type MachineStore = {
   hydrateConfig: () => void;
   setConfig: (config: Partial<AppConfig>) => void;
   toggleTheme: () => void;
+
+  /* Users */
+  users: User[];
+  selectedUser?: User;
+  isUsersHydrated: boolean;
+  hydrateUsers: () => void;
+  addUser: (name: string, color: string) => void;
+  deleteUser: (name: string) => void;
+  selectUser: (name: string) => void;
 
   setSelectedExercise: (ex: Exercise) => void;
   setSliderPositionLeft: (pos: number) => void;
@@ -146,6 +155,7 @@ const storeCreator: StateCreator<
           return;
         } catch {}
       }
+      localStorage.setItem('app_settings', JSON.stringify(get().config));
     }
     set({ isConfigHydrated: true });
   },
@@ -162,6 +172,41 @@ const storeCreator: StateCreator<
       },
     })),
 
+  /* Users */
+  users: [{ name: 'Default User', color: '#4F46E5' }],
+  selectedUser: undefined,
+  isUsersHydrated: false,
+  hydrateUsers: () => {
+    if (typeof window !== 'undefined') {
+      const savedUsers = localStorage.getItem('users');
+      if (savedUsers) {
+        try {
+          set({ isUsersHydrated: true, users: JSON.parse(savedUsers) });
+          return;
+        } catch {}
+      }
+      localStorage.setItem('users', JSON.stringify(get().users));
+    }
+    set({ isUsersHydrated: true });
+  },
+  addUser(name: string, color: string) {
+    const newUser = { name, color };
+    const updatedUsers = [...get().users, newUser];
+    set({ users: updatedUsers });
+  },
+  deleteUser(name: string) {
+    const updatedUsers = get().users.filter((u) => u.name !== name);
+    set({ users: updatedUsers });
+
+    if (get().selectedUser?.name === name) {
+      set({ selectedUser: undefined });
+    }
+  },
+  selectUser(name: string) {
+    const user = get().users.find((u) => u.name === name);
+    set({ selectedUser: user });
+  },
+
   setSelectedExercise: (ex) => {
     const {
       isResting,
@@ -169,6 +214,7 @@ const storeCreator: StateCreator<
       sets,
       activeTime,
       selectedExercise,
+      selectedUser,
       addSetToHistory,
       stopTimer,
     } = get();
@@ -180,6 +226,7 @@ const storeCreator: StateCreator<
         duration: activeTime,
         timestamp: Date.now(),
         exerciseName: selectedExercise?.name || 'Unknown',
+        userName: selectedUser?.name,
       });
       stopTimer();
       set({
@@ -290,6 +337,7 @@ const storeCreator: StateCreator<
       addRestToHistory,
       isResting,
       lastMovementTime,
+      selectedUser,
     } = get();
 
     if (!isResting) {
@@ -299,6 +347,7 @@ const storeCreator: StateCreator<
         duration: activeTime,
         timestamp: Date.now(),
         exerciseName: selectedExercise?.name || 'Unknown',
+        userName: selectedUser?.name,
       });
 
       const timeSinceLastMove = (Date.now() - lastMovementTime) / 1000;

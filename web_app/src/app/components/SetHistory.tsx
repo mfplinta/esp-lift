@@ -1,4 +1,4 @@
-import { useState, useEffect, CSSProperties } from 'react';
+import { useState, useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Menu, Download, History, Trash2, ChevronLeft, X } from 'lucide-react';
 import { SetRecord } from '../models';

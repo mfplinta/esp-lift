@@ -1,23 +1,23 @@
+#include <arpa/inet.h>
+#include <dirent.h>
 #include <driver/gpio.h>
 #include <driver/uart.h>
 #include <driver/uart_vfs.h>
 #include <esp_attr.h>
+#include <esp_http_server.h>
 #include <esp_littlefs.h>
+#include <esp_log.h>
 #include <esp_system.h>
+#include <fcntl.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
-#include <arpa/inet.h>
-#include <dirent.h>
-#include <esp_http_server.h>
-#include <fcntl.h>
 #include <netinet/in.h>
 #include <portmacro.h>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <esp_log.h>
 
 #include "data/settings.h"
 #include "encoder.h"
@@ -74,8 +74,7 @@ static void encoder_event_handler(encoder_event_t *event) {
 }
 
 esp_err_t calibrate_handler(httpd_req_t *req) {
-  if (leftEncoder == NULL || rightEncoder == NULL)
-    httpd_resp_send_err(req, 400, "");
+  if (leftEncoder == NULL || rightEncoder == NULL) httpd_resp_send_err(req, 400, "");
   encoder_reset_calibration(leftEncoder);
   encoder_reset_calibration(rightEncoder);
   httpd_resp_send(req, "Clearing calibration...", HTTPD_RESP_USE_STRLEN);
@@ -85,7 +84,7 @@ esp_err_t calibrate_handler(httpd_req_t *req) {
 static inline void monitor_system_info() {
   int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
   fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-  printf("Press CTRL+C to stop monitor\n\n\n\n");
+  printf("CTRL+C: stop monitor | j: left rep | k: right rep\n\n\n\n");
   while (1) {
     multi_heap_info_t info;
     heap_caps_get_info(&info, MALLOC_CAP_DEFAULT);
@@ -115,6 +114,14 @@ static inline void monitor_system_info() {
     if (c == 0x03) { // CTRL+C
       printf("\nMonitor stopped.\n");
       break;
+    } else if(c == 'r') {
+      encoder_reset_calibration(leftEncoder);
+      encoder_reset_calibration(rightEncoder);
+      printf("\nCalibration cleared.\n");
+    } else if(c == 'j') {
+      // count rep left
+    } else if(c == 'k') {
+      // count rep right
     }
 
     vTaskDelay(pdMS_TO_TICKS(300));
@@ -127,9 +134,8 @@ static inline void print_help() {
   printf("Welcome to ESP-LIFT.\n\n"
          "1. Get system information\n"
          "2. Restart ESP\n"
-         "3. Recalibrate encoders\n"
-         "4. List dir\n"
-         "5. Cat file\n");
+         "3. List dir\n"
+         "4. Cat file\n");
 }
 
 static void input_task(void *arg) {
@@ -148,10 +154,6 @@ static void input_task(void *arg) {
       esp_restart();
       break;
     case '3':
-      encoder_reset_calibration(leftEncoder);
-      encoder_reset_calibration(rightEncoder);
-      break;
-    case '4':
       char ls_path[50];
       printf("(no echo) ls: ");
       scanf("%49s%*c", ls_path);
@@ -167,7 +169,7 @@ static void input_task(void *arg) {
         ESP_LOGW("MAIN", "%s does not exist or could not be opened", ls_path);
       }
       break;
-    case '5':
+    case '4':
       char cat_path[50];
       printf("(no echo) cat: ");
       scanf("%49s%*c", cat_path);

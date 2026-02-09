@@ -1,12 +1,4 @@
-import {
-  Activity,
-  ChevronDown,
-  Dumbbell,
-  Eye,
-  EyeOff,
-  Wifi,
-  X,
-} from 'lucide-react'; // Added Activity icon
+import { ChevronDown, Dumbbell, Eye, EyeOff, Wifi, X } from 'lucide-react'; // Added Activity icon
 import { Switch } from '@/app/components/ui/switch';
 import { Label } from '@/app/components/ui/label';
 import { useState } from 'react';
@@ -41,7 +33,7 @@ export default function ConfigModal({
   const [canApplyNetwork, setCanApplyNetwork] = useState(false);
 
   const [movementOpen, setMovementOpen] = useState(false);
-  const [debounceInterval] = useState(
+  const [debounceInterval, setDebounceInterval] = useState(
     hardwareSettings.movement?.debounceInterval
   );
 
@@ -318,7 +310,9 @@ export default function ConfigModal({
                       type="number"
                       placeholder="0"
                       value={debounceInterval}
-                      onChange={(e) => Number(e.target.value)}
+                      onChange={(e) =>
+                        setDebounceInterval(Number(e.target.value))
+                      }
                       className={`w-full pl-3 pr-12 py-2 rounded-lg border text-sm appearance-none ${
                         isDarkMode
                           ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500'

@@ -63,12 +63,12 @@ esp_err_t post_settings_handler(httpd_req_t *req) {
   cJSON *settings_json = NULL;
   cJSON *req_json = NULL;
 
-  if((settings_json = cjson_read_from_file(settings_json_file))) {
+  if(!(settings_json = cjson_read_from_file(settings_json_file))) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Cannot read settings file");
     goto cleanup;
   }
 
-  if ((req_json = httpd_read_json_body(req))) {
+  if (!(req_json = httpd_read_json_body(req))) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
     goto cleanup;
   }
