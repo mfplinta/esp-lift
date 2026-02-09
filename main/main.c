@@ -14,6 +14,7 @@
 #include <freertos/task.h>
 #include <netinet/in.h>
 #include <portmacro.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -27,6 +28,7 @@
 #include "handlers/http_captiveportalredirect.h"
 #include "handlers/http_fileserver.h"
 #include "handlers/ws.h"
+#include "rep_counter.h"
 #include "utils.h"
 #include "wifi.h"
 
@@ -37,29 +39,22 @@ const char *WWW_PARTLABEL = "www";
 const char *CFG_PARTLABEL = "cfg";
 const char *TAG = "MAIN";
 
+static const char *const cal_state_names[] = {
+  [CAL_IDLE] = "idle", [CAL_SEEK_MAX] = "seek_max", [CAL_DONE] = "done"};
+
 httpd_handle_t server = NULL;
 encoder_t *leftEncoder = NULL;
 encoder_t *rightEncoder = NULL;
+static rep_counter_t rep_counter;
 
-static void encoder_event_handler(encoder_event_t *event) {
-  char rx_buffer[128];
-
-  static const char *const cal_state_names[] = {
-    [CAL_IDLE] = "idle", [CAL_SEEK_MAX] = "seek_max", [CAL_DONE] = "done"};
-
-  char *encoder_name;
-
-  if (event->source == leftEncoder) {
-    encoder_name = "left";
-  } else if (event->source == rightEncoder) {
-    encoder_name = "right";
-  } else {
-    encoder_name = "unknown";
-  }
+static void ws_send_encoder_event(const char *event_type, const char *encoder_name,
+                                  encoder_t *encoder, const char *cal_state_name) {
+  char rx_buffer[160];
 
   snprintf(rx_buffer, sizeof(rx_buffer),
-           "{\"name\": \"%s\", \"calibrated\": %f, \"cal_state\": \"%s\"}", encoder_name,
-           event->source->state.calibrated, cal_state_names[event->source->state.cal_state]);
+           "{\"event\": \"%s\", \"name\": \"%s\", \"calibrated\": %f, "
+           "\"cal_state\": \"%s\"}",
+           event_type, encoder_name, encoder->state.calibrated, cal_state_name);
 
   resp_arg_t *resp_arg;
   if (!(resp_arg = malloc(sizeof(resp_arg_t)))) {
@@ -71,6 +66,35 @@ static void encoder_event_handler(encoder_event_t *event) {
   resp_arg->data = strdup(rx_buffer);
 
   ws_send_message(resp_arg);
+}
+
+static void encoder_event_handler(encoder_event_t *event) {
+  char *encoder_name;
+  rep_side_t side;
+  bool has_side = true;
+
+  if (event->source == leftEncoder) {
+    encoder_name = "left";
+    side = REP_SIDE_LEFT;
+  } else if (event->source == rightEncoder) {
+    encoder_name = "right";
+    side = REP_SIDE_RIGHT;
+  } else {
+    encoder_name = "unknown";
+    has_side = false;
+  }
+
+  ws_send_encoder_event("position", encoder_name, event->source,
+                        cal_state_names[event->source->state.cal_state]);
+
+  if (has_side) {
+    bool rep_completed = rep_counter_check(&rep_counter, side, event->source->state.calibrated,
+                                           event->source->state.cal_state);
+    if (rep_completed) {
+      ws_send_encoder_event("rep", encoder_name, event->source,
+                            cal_state_names[event->source->state.cal_state]);
+    }
+  }
 }
 
 esp_err_t calibrate_handler(httpd_req_t *req) {
@@ -114,14 +138,16 @@ static inline void monitor_system_info() {
     if (c == 0x03) { // CTRL+C
       printf("\nMonitor stopped.\n");
       break;
-    } else if(c == 'r') {
+    } else if (c == 'r') {
       encoder_reset_calibration(leftEncoder);
       encoder_reset_calibration(rightEncoder);
       printf("\nCalibration cleared.\n");
-    } else if(c == 'j') {
-      // count rep left
-    } else if(c == 'k') {
-      // count rep right
+    } else if (c == 'j') {
+      ws_send_encoder_event("rep", "left", leftEncoder,
+                            cal_state_names[leftEncoder->state.cal_state]);
+    } else if (c == 'k') {
+      ws_send_encoder_event("rep", "right", rightEncoder,
+                            cal_state_names[rightEncoder->state.cal_state]);
     }
 
     vTaskDelay(pdMS_TO_TICKS(300));
@@ -249,6 +275,9 @@ void app_main(void) {
                                                   .pin_z = GPIO_NUM_34,
                                                   .debounce_interval = settings.debounce_interval,
                                                   .on_event_cb = encoder_event_handler});
+
+  rep_counter_init(&rep_counter);
+  ws_subscribe_message(rep_counter_handle_ws_message, &rep_counter);
 
   /* HTTP Server */
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();

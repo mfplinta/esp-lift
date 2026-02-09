@@ -53,6 +53,7 @@ type MachineStore = {
   incrementLeft: () => void;
   incrementRight: () => void;
   processRep: (pos: number, isRight: boolean) => void;
+  applyRepCompleted: (side: 'left' | 'right') => void;
 
   setExercises: (exs: Exercise[]) => void;
   addSetToHistory: (s: SetRecord) => void;
@@ -235,16 +236,20 @@ const storeCreator: StateCreator<
         repsLeft: 0,
         repsRight: 0,
         activeTime: 0,
+        sliderThreshold: ex.thresholdPercentage,
         selectedExercise: ex,
         isAlternating: ex.type === 'alternating',
       });
     } else {
-      set({ selectedExercise: ex, isAlternating: ex.type === 'alternating' });
+      set({
+        selectedExercise: ex,
+        isAlternating: ex.type === 'alternating',
+        sliderThreshold: ex.thresholdPercentage,
+      });
     }
   },
 
   setSliderPositionLeft: (pos) => {
-    get().processRep(pos, false);
     set({
       sliderPositionLeft: pos,
       lastSliderPosition: pos,
@@ -253,7 +258,6 @@ const storeCreator: StateCreator<
   },
 
   setSliderPositionRight: (pos) => {
-    get().processRep(pos, true);
     set({
       sliderPositionRight: pos,
       lastSliderPosition: pos,
@@ -275,11 +279,12 @@ const storeCreator: StateCreator<
     })),
 
   processRep: (pos: number, isRight: boolean) => {
+    void pos;
+    void isRight;
+  },
+
+  applyRepCompleted: (side: 'left' | 'right') => {
     const {
-      config,
-      sliderThreshold,
-      lastLeftState,
-      lastRightState,
       incrementLeft,
       incrementRight,
       startTimer,
@@ -287,26 +292,12 @@ const storeCreator: StateCreator<
       completeSetOrRest,
     } = get();
 
-    const triggerStart = config.strictMode ? pos > sliderThreshold : pos < 30;
-    const triggerEnd = config.strictMode ? pos <= sliderThreshold : pos > 70;
+    startTimer();
+    if (side === 'right') incrementRight();
+    else incrementLeft();
+    if (isResting) completeSetOrRest();
 
-    const lastState = isRight ? lastRightState : lastLeftState;
-
-    if (!lastState && triggerStart) {
-      set(isRight ? { lastRightState: true } : { lastLeftState: true });
-    }
-
-    if (lastState && triggerEnd) {
-      startTimer();
-      if (isRight) incrementRight();
-      else incrementLeft();
-      if (isResting) completeSetOrRest();
-
-      set((s) => ({
-        lastLeftState: !isRight ? false : s.lastLeftState,
-        lastRightState: isRight ? false : s.lastRightState,
-      }));
-    }
+    set({ lastMovementTime: Date.now() });
   },
 
   setExercises: (exs) => set({ exercises: exs }),

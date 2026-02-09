@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sun, Moon, Settings, Wifi, Dumbbell } from 'lucide-react';
 import MachineVisualizer from '@/app/components/MachineVisualizer';
 import StatsDisplay from '@/app/components/StatsDisplay';
@@ -40,8 +40,11 @@ export default function App() {
   const {
     config,
     isDarkMode,
+    selectedExercise,
+    sliderThreshold,
     setSliderPositionLeft,
     setSliderPositionRight,
+    applyRepCompleted,
     setExercises,
     toggleTheme,
     hydrateConfig,
@@ -51,8 +54,11 @@ export default function App() {
     useShallow((s) => ({
       config: s.config,
       isDarkMode: s.config.theme === 'dark',
+      selectedExercise: s.selectedExercise,
+      sliderThreshold: s.sliderThreshold,
       setSliderPositionLeft: s.setSliderPositionLeft,
       setSliderPositionRight: s.setSliderPositionRight,
+      applyRepCompleted: s.applyRepCompleted,
       setExercises: s.setExercises,
       toggleTheme: s.toggleTheme,
       hydrateConfig: s.hydrateConfig,
@@ -163,30 +169,42 @@ export default function App() {
   };
 
   // --- WebSocket ---
-  const { readyState } = useWebSocket({
+  const { readyState, sendMessage } = useWebSocket({
     url: `ws://${host}/ws`,
     onMessage: (e) => {
       const data: {
+        event?: 'position' | 'rep' | 'threshold';
         name: string;
         calibrated: number;
         cal_state: 'idle' | 'seek_max' | 'done';
       } = JSON.parse(e.data);
-      const calibrated = Math.min(Math.max(0, data.calibrated ?? 0), 100);
 
-      if (data.name === 'right') setSliderPositionRight(calibrated);
-      else setSliderPositionLeft(calibrated);
+      const eventType = data.event ?? 'position';
+      if (eventType === 'rep') {
+        if (data.name === 'right' || data.name === 'left') {
+          applyRepCompleted(data.name);
+        }
+        return;
+      }
 
-      if (data.cal_state == 'seek_max')
-        notify(`Pull ${data.name} to calibrate, then let go`, {
-          autoDismiss: 1000,
-          icon: Dumbbell,
-        });
+      if (eventType === 'position') {
+        const calibrated = Math.min(Math.max(0, data.calibrated ?? 0), 100);
 
-      if (data.cal_state == 'idle') {
-        notify(
-          `${data.name.charAt(0).toUpperCase() + data.name.slice(1)} calibration reset`,
-          { variant: 'info' }
-        );
+        if (data.name === 'right') setSliderPositionRight(calibrated);
+        else setSliderPositionLeft(calibrated);
+
+        if (data.cal_state == 'seek_max')
+          notify(`Pull ${data.name} to calibrate, then let go`, {
+            autoDismiss: 1000,
+            icon: Dumbbell,
+          });
+
+        if (data.cal_state == 'idle') {
+          notify(
+            `${data.name.charAt(0).toUpperCase() + data.name.slice(1)} calibration reset`,
+            { variant: 'info' }
+          );
+        }
       }
     },
     onError: () => {
@@ -221,6 +239,33 @@ export default function App() {
       notify(MSG_WEBSOCKET_CONNECTED, { variant: 'success', icon: Wifi });
     }
   }, [readyState]);
+
+  const sendThresholds = useCallback(
+    (value: number) => {
+      if (readyState !== WebSocket.OPEN) return;
+      const clamped = Math.min(Math.max(0, value), 100);
+      sendMessage(
+        JSON.stringify({ event: 'threshold', name: 'left', threshold: clamped })
+      );
+      sendMessage(
+        JSON.stringify({
+          event: 'threshold',
+          name: 'right',
+          threshold: clamped,
+        })
+      );
+    },
+    [readyState, sendMessage]
+  );
+
+  useEffect(() => {
+    if (!selectedExercise) return;
+    sendThresholds(selectedExercise.thresholdPercentage);
+  }, [selectedExercise, sendThresholds]);
+
+  useEffect(() => {
+    sendThresholds(sliderThreshold);
+  }, [sliderThreshold, sendThresholds]);
 
   return (
     <div

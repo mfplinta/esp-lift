@@ -34,10 +34,14 @@ export default function StatsDisplay({
 
   return (
     <div className={`${labelColor} whitespace-nowrap text-center`}>
-      <div className={`text-xs sm:text-sm font-semibold tracking-widest uppercase ${subLabelColor}`}>
+      <div
+        className={`text-xs sm:text-sm font-semibold tracking-widest uppercase ${subLabelColor}`}
+      >
         Sets
       </div>
-      <div className={`text-2xl sm:text-3xl font-bold ${labelColor}`}>{sets}</div>
+      <div className={`text-2xl sm:text-3xl font-bold ${labelColor}`}>
+        {sets}
+      </div>
 
       <div className="mt-3">
         {isResting ? (
@@ -60,7 +64,9 @@ export default function StatsDisplay({
       </div>
 
       {!isResting && (
-        <div className={`text-xs sm:text-sm font-semibold tracking-widest uppercase ${subLabelColor}`}>
+        <div
+          className={`text-xs sm:text-sm font-semibold tracking-widest uppercase ${subLabelColor}`}
+        >
           Reps
         </div>
       )}

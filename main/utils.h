@@ -31,6 +31,12 @@ void url_decode(char *dst, const char *src) {
   *dst = '\0';
 }
 
+static double clamp_double(double value, double min, double max) {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
 /**
  * Must be freed by the caller
  */

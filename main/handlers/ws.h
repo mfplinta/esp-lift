@@ -4,11 +4,21 @@
 #include <esp_http_server.h>
 #include <esp_log.h>
 #include <sdkconfig.h>
+#include <stdbool.h>
+#include <string.h>
 
 typedef struct {
   httpd_handle_t hd;
   char *data;
 } resp_arg_t;
+
+typedef void (*ws_message_callback_t)(const char *payload, size_t len, void *ctx);
+
+#define WS_MAX_SUBSCRIBERS 4
+
+static ws_message_callback_t ws_subscribers[WS_MAX_SUBSCRIBERS];
+static void *ws_subscriber_ctx[WS_MAX_SUBSCRIBERS];
+static size_t ws_subscriber_count = 0;
 
 static esp_err_t ws_handler(httpd_req_t *req);
 
@@ -18,6 +28,14 @@ void ws_register(httpd_handle_t server) {
                                                                      .handler = ws_handler,
                                                                      .user_ctx = NULL,
                                                                      .is_websocket = true}));
+}
+
+bool ws_subscribe_message(ws_message_callback_t cb, void *ctx) {
+  if (!cb || ws_subscriber_count >= WS_MAX_SUBSCRIBERS) return false;
+  ws_subscribers[ws_subscriber_count] = cb;
+  ws_subscriber_ctx[ws_subscriber_count] = ctx;
+  ws_subscriber_count++;
+  return true;
 }
 
 void ws_async_send(void *arg) {
@@ -67,7 +85,7 @@ esp_err_t ws_handler(httpd_req_t *req) {
     return ESP_OK;
   }
 
-  esp_err_t ret;
+  esp_err_t ret = ESP_OK;
   uint8_t *buf = NULL;
 
   httpd_ws_frame_t ws_pkt;
@@ -81,13 +99,19 @@ esp_err_t ws_handler(httpd_req_t *req) {
     ESP_LOGI("WS", "Received ws text of length %d", ws_pkt.len);
 
     if (ws_pkt.len > 0) {
-      if ((buf = (uint8_t*) calloc(1, ws_pkt.len + 1))) {
+      if (!(buf = (uint8_t*) calloc(1, ws_pkt.len + 1))) {
         ret = ESP_ERR_NO_MEM;
         goto cleanup;
       }
       ws_pkt.payload = buf;
       if ((ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len))) {
         ESP_LOGE("WS", "httpd_ws_recv_frame failed with %d", ret);
+      } else {
+        for (size_t i = 0; i < ws_subscriber_count; i++) {
+          if (ws_subscribers[i]) {
+            ws_subscribers[i]((const char *) buf, ws_pkt.len, ws_subscriber_ctx[i]);
+          }
+        }
       }
     }
   } else {

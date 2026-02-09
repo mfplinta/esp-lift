@@ -10,8 +10,10 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
   const [animate, setAnimate] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isNear, setIsNear] = useState(false);
+  const [dragThreshold, setDragThreshold] = useState<number | null>(null);
 
   const innerRef = useRef<HTMLDivElement | null>(null);
+  const dragThresholdRef = useRef<number | null>(null);
 
   const { sliderThreshold, reps, position, isDarkMode, setSliderThreshold } =
     useStore(
@@ -34,30 +36,49 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
 
   const prevReps = useRef(reps);
 
-  const updateThreshold = useCallback(
-    (clientY: number) => {
+  const computeThreshold = useCallback((clientY: number) => {
+    if (!innerRef.current) return null;
+
+    const rect = innerRef.current.getBoundingClientRect();
+    const relativeY = clientY - rect.top;
+    const rawPercentage = (relativeY / rect.height) * 100;
+    const invertedPercentage = 100 - rawPercentage;
+
+    return Math.max(0, Math.min(100, invertedPercentage));
+  }, []);
+
+  const updateNearState = useCallback(
+    (clientY: number, thresholdValue: number) => {
       if (!innerRef.current) return;
 
       const rect = innerRef.current.getBoundingClientRect();
-      const relativeY = clientY - rect.top;
-      const rawPercentage = (relativeY / rect.height) * 100;
-      const invertedPercentage = 100 - rawPercentage;
+      const thresholdBottomPx = rect.height * (thresholdValue / 100);
+      const thresholdCenterY = rect.bottom - thresholdBottomPx;
+      const dist = Math.abs(clientY - thresholdCenterY);
 
-      setSliderThreshold(Math.max(0, Math.min(100, invertedPercentage)));
+      setIsNear(dist <= proximityPx);
     },
-    [setSliderThreshold]
+    []
   );
 
   useEffect(() => {
     if (!isDragging) return;
 
     const handlePointerMove = (e: PointerEvent) => {
-      updateThreshold(e.clientY);
+      const next = computeThreshold(e.clientY);
+      if (next === null) return;
+      dragThresholdRef.current = next;
+      setDragThreshold(next);
+      updateNearState(e.clientY, next);
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (e: PointerEvent) => {
       setIsDragging(false);
-      setIsNear(false);
+      const finalValue =
+        dragThresholdRef.current ?? dragThreshold ?? sliderThreshold;
+      setDragThreshold(null);
+      setSliderThreshold(finalValue);
+      updateNearState(e.clientY, finalValue);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -69,26 +90,36 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [isDragging, updateThreshold]);
+  }, [
+    isDragging,
+    computeThreshold,
+    dragThreshold,
+    sliderThreshold,
+    setSliderThreshold,
+    updateNearState,
+  ]);
 
   const proximityPx = 25;
   const baseLinePx = 5;
   const expandedLinePx = 20;
+  const displayThreshold =
+    isDragging && dragThreshold !== null ? dragThreshold : sliderThreshold;
 
   const handleContainerPointerMove = (e: React.PointerEvent) => {
-    if (isDragging || !innerRef.current) return;
+    if (!innerRef.current) return;
 
-    const rect = innerRef.current.getBoundingClientRect();
-    const thresholdBottomPx = rect.height * (sliderThreshold / 100);
-    const thresholdCenterY = rect.bottom - thresholdBottomPx;
-    const dist = Math.abs(e.clientY - thresholdCenterY);
-
-    setIsNear(dist <= proximityPx);
+    updateNearState(e.clientY, displayThreshold);
   };
 
   const handleDragStart = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     setIsDragging(true);
+    const next = computeThreshold(e.clientY);
+    if (next !== null) {
+      dragThresholdRef.current = next;
+      setDragThreshold(next);
+      updateNearState(e.clientY, next);
+    }
   };
 
   useEffect(() => {
@@ -151,7 +182,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
         className="absolute w-full cursor-grab active:cursor-grabbing z-30 flex items-center"
         onPointerDown={handleDragStart}
         style={{
-          bottom: `${sliderThreshold}%`,
+          bottom: `${displayThreshold}%`,
           transform: 'translateY(50%)',
           height: `${hitboxPx}px`,
           touchAction: 'none',
@@ -175,7 +206,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
       <div
         className={`absolute ${thresholdColor} z-20 shadow-lg rounded-l-full pointer-events-none`}
         style={{
-          bottom: `${sliderThreshold}%`,
+          bottom: `${displayThreshold}%`,
           transform: 'translateY(50%)',
           left: '-60px',
           width: '60px',
@@ -186,7 +217,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
       <div
         className={`absolute ${thresholdColor} z-20 shadow-lg rounded-r-full pointer-events-none`}
         style={{
-          bottom: `${sliderThreshold}%`,
+          bottom: `${displayThreshold}%`,
           transform: 'translateY(50%)',
           right: '-60px',
           width: '60px',
