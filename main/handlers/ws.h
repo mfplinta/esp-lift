@@ -3,6 +3,8 @@
 
 #include <esp_http_server.h>
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <sdkconfig.h>
 #include <stdbool.h>
 #include <string.h>
@@ -20,9 +22,41 @@ static ws_message_callback_t ws_subscribers[WS_MAX_SUBSCRIBERS];
 static void *ws_subscriber_ctx[WS_MAX_SUBSCRIBERS];
 static size_t ws_subscriber_count = 0;
 
+static httpd_handle_t ws_server_handle = NULL;
+
+#define WS_HANDSHAKE_INTERVAL_MS 10000
+
 static esp_err_t ws_handler(httpd_req_t *req);
+void ws_send_message(resp_arg_t* resp_arg);
+
+static void ws_handshake_broadcast_task(void *arg) {
+  (void) arg;
+  const TickType_t interval_ticks = pdMS_TO_TICKS(WS_HANDSHAKE_INTERVAL_MS);
+
+  while (1) {
+    if (ws_server_handle) {
+      resp_arg_t *resp_arg = malloc(sizeof(resp_arg_t));
+      if (resp_arg) {
+        resp_arg->hd = ws_server_handle;
+        resp_arg->data = strdup("{\"event\":\"handshake\"}");
+        if (resp_arg->data) {
+          ws_send_message(resp_arg);
+        } else {
+          free(resp_arg);
+        }
+      }
+    }
+    vTaskDelay(interval_ticks);
+  }
+}
 
 void ws_register(httpd_handle_t server) {
+    ws_server_handle = server;
+    static bool handshake_started = false;
+    if (!handshake_started) {
+      handshake_started = true;
+      xTaskCreate(ws_handshake_broadcast_task, "ws_handshake_broadcast", 2048, NULL, 5, NULL);
+    }
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/ws",
                                                                      .method = HTTP_GET,
                                                                      .handler = ws_handler,

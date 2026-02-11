@@ -17,6 +17,7 @@ type MachineStore = {
   isResting: boolean;
   activeTime: number;
   lastMovementTime: number;
+  lastMessageTime: number;
   timerIntervalId: number | null;
   startTimer: () => void;
   stopTimer: () => void;
@@ -54,6 +55,7 @@ type MachineStore = {
   incrementRight: () => void;
   processRep: (pos: number, isRight: boolean) => void;
   applyRepCompleted: (side: 'left' | 'right') => void;
+  setLastMessageTime: (time: number) => void;
 
   setExercises: (exs: Exercise[]) => void;
   addSetToHistory: (s: SetRecord) => void;
@@ -83,6 +85,7 @@ const storeCreator: StateCreator<
   isResting: false,
   activeTime: 0,
   lastMovementTime: Date.now(),
+  lastMessageTime: Date.now(),
   timerIntervalId: null,
   startTimer: () => {
     if (get().timerIntervalId) return;
@@ -299,6 +302,8 @@ const storeCreator: StateCreator<
 
     set({ lastMovementTime: Date.now() });
   },
+
+  setLastMessageTime: (time) => set({ lastMessageTime: time }),
 
   setExercises: (exs) => set({ exercises: exs }),
 

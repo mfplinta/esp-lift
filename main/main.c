@@ -12,6 +12,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <portmacro.h>
 #include <stdbool.h>
@@ -46,15 +47,38 @@ httpd_handle_t server = NULL;
 encoder_t *leftEncoder = NULL;
 encoder_t *rightEncoder = NULL;
 static rep_counter_t rep_counter;
+static int32_t last_left_calibrated_sent = -1;
+static int32_t last_right_calibrated_sent = -1;
 
 static void ws_send_encoder_event(const char *event_type, const char *encoder_name,
                                   encoder_t *encoder, const char *cal_state_name) {
   char rx_buffer[160];
 
+  int32_t calibrated_int = (int32_t) ceil(encoder->state.calibrated);
+  if (calibrated_int < 0) calibrated_int = 0;
+  if (calibrated_int > 100) calibrated_int = 100;
+
+  if (strcmp(event_type, "position") == 0) {
+    int32_t *last_sent = NULL;
+    if (encoder == leftEncoder) {
+      last_sent = &last_left_calibrated_sent;
+    } else if (encoder == rightEncoder) {
+      last_sent = &last_right_calibrated_sent;
+    }
+
+    if (last_sent && *last_sent == calibrated_int) {
+      return;
+    }
+
+    if (last_sent) {
+      *last_sent = calibrated_int;
+    }
+  }
+
   snprintf(rx_buffer, sizeof(rx_buffer),
-           "{\"event\": \"%s\", \"name\": \"%s\", \"calibrated\": %f, "
+           "{\"event\": \"%s\", \"name\": \"%s\", \"calibrated\": %ld, "
            "\"cal_state\": \"%s\"}",
-           event_type, encoder_name, encoder->state.calibrated, cal_state_name);
+           event_type, encoder_name, (long) calibrated_int, cal_state_name);
 
   resp_arg_t *resp_arg;
   if (!(resp_arg = malloc(sizeof(resp_arg_t)))) {
@@ -265,16 +289,20 @@ void app_main(void) {
   init_wifi(&wifi_config, settings.hostname);
 
   /* Encoders */
-  leftEncoder = init_encoder((encoder_config_t) {.pin_a = GPIO_NUM_26,
-                                                 .pin_b = GPIO_NUM_25,
-                                                 .pin_z = GPIO_NUM_33,
-                                                 .debounce_interval = settings.debounce_interval,
-                                                 .on_event_cb = encoder_event_handler});
-  rightEncoder = init_encoder((encoder_config_t) {.pin_a = GPIO_NUM_32,
-                                                  .pin_b = GPIO_NUM_35,
-                                                  .pin_z = GPIO_NUM_34,
-                                                  .debounce_interval = settings.debounce_interval,
-                                                  .on_event_cb = encoder_event_handler});
+  leftEncoder = init_encoder(
+    (encoder_config_t) {.pin_a = GPIO_NUM_26,
+                        .pin_b = GPIO_NUM_25,
+                        .pin_z = GPIO_NUM_33,
+                        .debounce_interval = settings.debounce_interval,
+                        .calibration_debounce_steps = settings.calibration_debounce_steps,
+                        .on_event_cb = encoder_event_handler});
+  rightEncoder = init_encoder(
+    (encoder_config_t) {.pin_a = GPIO_NUM_32,
+                        .pin_b = GPIO_NUM_35,
+                        .pin_z = GPIO_NUM_34,
+                        .debounce_interval = settings.debounce_interval,
+                        .calibration_debounce_steps = settings.calibration_debounce_steps,
+                        .on_event_cb = encoder_event_handler});
 
   rep_counter_init(&rep_counter);
   ws_subscribe_message(rep_counter_handle_ws_message, &rep_counter);

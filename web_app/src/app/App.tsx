@@ -22,20 +22,25 @@ import UserAvatarButton from './components/UserAvatarButton';
 const MSG_WEBSOCKET_CONNECTING = 'Connecting...';
 const MSG_WEBSOCKET_CONNECTED = 'Connected';
 const MSG_WEBSOCKET_ERROR = 'Error connecting to device';
+const MSG_WEBSOCKET_DISCONNECTED = 'Disconnected. Reconnecting...';
+const HANDSHAKE_INTERVAL_MS = 15000;
 
 const host = window.location.href.split('/')[2];
 
 export default function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [showSelector, setShowSelector] = useState(false);
+  const [wsEnabled, setWsEnabled] = useState(true);
   const [hardwareSettings, setHardwareSettings] = useState<HardwareConfig>({
     movement: {
       debounceInterval: 100,
+      calibrationDebounceSteps: 25,
     },
   });
 
   // Refs
   const notificationRef = useRef<NotificationHandle>(null);
+  const handshakeExpiredRef = useRef(false);
 
   const {
     config,
@@ -46,6 +51,8 @@ export default function App() {
     setSliderPositionRight,
     applyRepCompleted,
     setExercises,
+    lastMessageTime,
+    setLastMessageTime,
     toggleTheme,
     hydrateConfig,
     hydrateSetHistory,
@@ -60,6 +67,8 @@ export default function App() {
       setSliderPositionRight: s.setSliderPositionRight,
       applyRepCompleted: s.applyRepCompleted,
       setExercises: s.setExercises,
+      lastMessageTime: s.lastMessageTime,
+      setLastMessageTime: s.setLastMessageTime,
       toggleTheme: s.toggleTheme,
       hydrateConfig: s.hydrateConfig,
       hydrateSetHistory: s.hydrateSetHistory,
@@ -171,13 +180,43 @@ export default function App() {
   // --- WebSocket ---
   const { readyState, sendMessage } = useWebSocket({
     url: `ws://${host}/ws`,
+    connect: wsEnabled,
+    shouldReconnect: true,
+    retryOnError: true,
+    reconnectInterval: (attempt) => Math.min(10000, 1000 * attempt),
+    onOpen: () => {
+      setLastMessageTime(Date.now());
+      handshakeExpiredRef.current = false;
+      notify(MSG_WEBSOCKET_CONNECTED, { variant: 'success', icon: Wifi });
+    },
+    onClose: () => {
+      notify(MSG_WEBSOCKET_DISCONNECTED, {
+        variant: 'error',
+        icon: Wifi,
+        autoDismiss: 0,
+      });
+    },
+    onError: () => {
+      notify(MSG_WEBSOCKET_ERROR, {
+        variant: 'error',
+        icon: Wifi,
+        autoDismiss: 0,
+      });
+    },
     onMessage: (e) => {
       const data: {
-        event?: 'position' | 'rep' | 'threshold';
+        event?: 'position' | 'rep' | 'threshold' | 'handshake';
         name: string;
         calibrated: number;
         cal_state: 'idle' | 'seek_max' | 'done';
       } = JSON.parse(e.data);
+      setLastMessageTime(Date.now());
+      handshakeExpiredRef.current = false;
+      dismissNotification(MSG_WEBSOCKET_DISCONNECTED);
+
+      if (data.event === 'handshake') {
+        return;
+      }
 
       const eventType = data.event ?? 'position';
       if (eventType === 'rep') {
@@ -207,14 +246,6 @@ export default function App() {
         }
       }
     },
-    onError: () => {
-      dismissNotification(MSG_WEBSOCKET_CONNECTING);
-      notify(MSG_WEBSOCKET_ERROR, {
-        variant: 'error',
-        icon: Wifi,
-        autoDismiss: 10000,
-      });
-    },
   });
 
   useEffect(() => {
@@ -228,6 +259,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let timer: number | undefined;
+
     if (readyState === WebSocket.CONNECTING) {
       notify(MSG_WEBSOCKET_CONNECTING, {
         variant: 'info',
@@ -236,9 +269,26 @@ export default function App() {
       });
     } else if (readyState === WebSocket.OPEN) {
       dismissNotification(MSG_WEBSOCKET_CONNECTING);
-      notify(MSG_WEBSOCKET_CONNECTED, { variant: 'success', icon: Wifi });
+      dismissNotification(MSG_WEBSOCKET_DISCONNECTED);
+      dismissNotification(MSG_WEBSOCKET_ERROR);
+
+      timer = window.setInterval(() => {
+        const elapsed = Date.now() - lastMessageTime;
+        if (elapsed <= HANDSHAKE_INTERVAL_MS) return;
+        if (handshakeExpiredRef.current) return;
+
+        handshakeExpiredRef.current = true;
+        setWsEnabled(false);
+        window.setTimeout(() => setWsEnabled(true), 500);
+      }, 1000);
+    } else if (readyState === WebSocket.CLOSED) {
+      dismissNotification(MSG_WEBSOCKET_CONNECTING);
     }
-  }, [readyState]);
+
+    return () => {
+      if (timer) window.clearInterval(timer);
+    };
+  }, [readyState, lastMessageTime, setLastMessageTime]);
 
   const sendThresholds = useCallback(
     (value: number) => {

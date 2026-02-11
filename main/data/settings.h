@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #define DEBOUNCE_MS 100
+#define CALIBRATION_DEBOUNCE_STEPS_DEFAULT 25
 #define DEFAULT_HOSTNAME "esp-lift.arpa"
 
 typedef struct {
@@ -13,9 +14,13 @@ typedef struct {
   const char *hostname;
 
   int debounce_interval;
+  int calibration_debounce_steps;
 } settings_t;
 
 int config_load_settings(cJSON *root, settings_t *settings) {
+  settings->debounce_interval = DEBOUNCE_MS;
+  settings->calibration_debounce_steps = CALIBRATION_DEBOUNCE_STEPS_DEFAULT;
+
   const cJSON *network = cJSON_GetObjectItem(root, "network");
   if (cJSON_IsObject(network)) {
     const cJSON *ssid = cJSON_GetObjectItem(network, "ssid");
@@ -32,8 +37,13 @@ int config_load_settings(cJSON *root, settings_t *settings) {
   const cJSON *movement = cJSON_GetObjectItem(root, "movement");
   if (cJSON_IsObject(movement)) {
     const cJSON *debounce_interval = cJSON_GetObjectItem(movement, "debounceInterval");
+    const cJSON *calibration_debounce_steps =
+      cJSON_GetObjectItem(movement, "calibrationDebounceSteps");
 
     settings->debounce_interval = cJSON_IsNumber(debounce_interval) ? debounce_interval->valueint : DEBOUNCE_MS;
+    settings->calibration_debounce_steps = cJSON_IsNumber(calibration_debounce_steps)
+      ? calibration_debounce_steps->valueint
+      : CALIBRATION_DEBOUNCE_STEPS_DEFAULT;
   }
 
   return EXIT_SUCCESS;
@@ -66,6 +76,10 @@ int config_change_settings(cJSON *root, cJSON *patch) {
     if ((item = cJSON_GetObjectItem(movement, "debounceInterval")))
       if (cJSON_IsNumber(item))
         cJSON_ReplaceItemInObject(dst, "debounceInterval", cJSON_Duplicate(item, 1));
+
+    if ((item = cJSON_GetObjectItem(movement, "calibrationDebounceSteps")))
+      if (cJSON_IsNumber(item))
+        cJSON_ReplaceItemInObject(dst, "calibrationDebounceSteps", cJSON_Duplicate(item, 1));
   }
 
   return EXIT_SUCCESS;

@@ -95,7 +95,7 @@ bool rep_counter_check(rep_counter_t *counter, rep_side_t side, double position,
   double pos = clamp_double(position, 0.0, 100.0);
   double threshold = counter->thresholds[side];
   double arm_point = clamp_double(threshold - REP_DEADBAND, 0.0, 100.0);
-  double fire_point = clamp_double(threshold + REP_DEADBAND, 0.0, 100.0);
+  double fire_point = clamp_double(threshold, 0.0, 100.0);
 
   if (!counter->armed[side] && pos <= arm_point) {
     counter->armed[side] = true;

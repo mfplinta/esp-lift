@@ -8,8 +8,8 @@ export default function DebugPanel() {
     width: number;
     height: number;
   }>({ width: 0, height: 0 });
-  const lastMovementMs = useStore((s) =>
-    (Date.now() - s.lastMovementTime).toString().padStart(7)
+  const lastMessageMs = useStore((s) =>
+    (Date.now() - s.lastMessageTime).toString().padStart(7)
   );
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export default function DebugPanel() {
                 Last message |
               </td>
               <td className="text-right whitespace-pre-wrap">
-                {lastMovementMs} ms
+                {lastMessageMs} ms
               </td>
             </tr>
 

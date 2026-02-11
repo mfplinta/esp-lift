@@ -34,7 +34,10 @@ export default function ConfigModal({
 
   const [movementOpen, setMovementOpen] = useState(false);
   const [debounceInterval, setDebounceInterval] = useState(
-    hardwareSettings.movement?.debounceInterval
+    hardwareSettings.movement?.debounceInterval ?? 100
+  );
+  const [calibrationDebounceSteps, setCalibrationDebounceSteps] = useState(
+    hardwareSettings.movement?.calibrationDebounceSteps ?? 25
   );
 
   const { config, isDarkMode, setConfig } = useStore(
@@ -309,6 +312,7 @@ export default function ConfigModal({
                     <input
                       type="number"
                       placeholder="0"
+                      min={0}
                       value={debounceInterval}
                       onChange={(e) =>
                         setDebounceInterval(Number(e.target.value))
@@ -329,6 +333,37 @@ export default function ConfigModal({
                   </div>
                 </div>
 
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">
+                    Calibration debounce steps
+                  </Label>
+                  <div className="relative flex items-center">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      min={0}
+                      max={720}
+                      step={1}
+                      value={calibrationDebounceSteps}
+                      onChange={(e) =>
+                        setCalibrationDebounceSteps(Number(e.target.value))
+                      }
+                      className={`w-full pl-3 pr-16 py-2 rounded-lg border text-sm appearance-none ${
+                        isDarkMode
+                          ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500'
+                          : 'bg-white border-gray-300 text-black placeholder-gray-400'
+                      } [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+                    />
+                    <span
+                      className={`absolute right-3 text-sm font-medium pointer-events-none ${
+                        isDarkMode ? 'text-gray-500' : 'text-gray-400'
+                      }`}
+                    >
+                      steps
+                    </span>
+                  </div>
+                </div>
+
                 <button
                   onClick={() => {
                     setMovementOpen(false);
@@ -337,6 +372,7 @@ export default function ConfigModal({
                       movement: {
                         ...hardwareSettings.movement,
                         debounceInterval: debounceInterval,
+                        calibrationDebounceSteps: calibrationDebounceSteps,
                       },
                     });
                   }}

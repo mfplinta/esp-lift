@@ -12,7 +12,6 @@
 
 #define CAL_MIN 0.0
 #define CAL_MAX 100.0
-#define CAL_DEBOUNCE_STEPS 5
 
 typedef enum { CAL_IDLE, CAL_SEEK_MAX, CAL_DONE } calibration_state_t;
 typedef enum { DIR_NONE = 0, DIR_POSITIVE, DIR_NEGATIVE } rotation_dir_t;
@@ -22,6 +21,7 @@ struct encoder_event_t;
 typedef struct {
   gpio_num_t pin_a, pin_b, pin_z;
   int debounce_interval;
+  int32_t calibration_debounce_steps;
   void (*on_event_cb)(struct encoder_event_t *event);
 } encoder_config_t;
 
@@ -92,6 +92,9 @@ static inline void set_cal_state(encoder_t *encoder, calibration_state_t cal_sta
 static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
   if (delta_raw == 0) return;
 
+  int32_t debounce_steps = enc->config.calibration_debounce_steps;
+  if (debounce_steps < 0) debounce_steps = 0;
+
   rotation_dir_t dir = detect_dir(delta_raw);
   int32_t logical = enc->state.raw_count + enc->state.offset;
   int32_t dist = logical - enc->state.start_count;
@@ -100,11 +103,20 @@ static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
 
   switch (enc->state.cal_state) {
   case CAL_IDLE:
-    enc->state.start_count = logical;
-    enc->state.max_distance = 0;
-    enc->state.reverse_accum = 0;
+    if (enc->state.cal_dir != DIR_NONE && dir != enc->state.cal_dir) {
+      enc->state.reverse_accum = 0;
+    }
     enc->state.cal_dir = dir;
-    set_cal_state(enc, CAL_SEEK_MAX);
+    enc->state.reverse_accum += step;
+
+    if (enc->state.reverse_accum >= debounce_steps) {
+      enc->state.start_count =
+        logical -
+        (enc->state.cal_dir == DIR_POSITIVE ? enc->state.reverse_accum : -enc->state.reverse_accum);
+      enc->state.max_distance = 0;
+      enc->state.reverse_accum = 0;
+      set_cal_state(enc, CAL_SEEK_MAX);
+    }
     break;
 
   case CAL_SEEK_MAX:
@@ -114,7 +126,7 @@ static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
       enc->state.reverse_accum = 0;
     } else {
       enc->state.reverse_accum += step;
-      if (enc->state.reverse_accum >= CAL_DEBOUNCE_STEPS && enc->state.max_distance > 0) {
+      if (enc->state.reverse_accum >= debounce_steps && enc->state.max_distance > 0) {
         set_cal_state(enc, CAL_DONE);
       }
     }
