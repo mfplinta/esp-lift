@@ -1,5 +1,6 @@
 export interface SetRecord {
-  setNumber: number;
+  // setNumber removed — history items no longer show sequential numbers
+  setNumber?: number;
   reps: number;
   duration: number;
   timestamp: number;

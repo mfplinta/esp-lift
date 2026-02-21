@@ -18,13 +18,10 @@ export default function SetCard({ record, formatTime }: SetCardProps) {
       <div className="flex justify-between items-start mb-1">
         <div>
           <span
-            className={`font-bold ${record.setNumber === 0 ? 'text-blue-500' : ''}`}
+            className={`font-bold ${record.exerciseName === 'Rest' ? 'text-blue-500' : ''}`}
           >
-            {record.setNumber === 0 ? 'Rest' : `Set ${record.setNumber}`}
+            {record.exerciseName === 'Rest' ? 'Rest' : record.exerciseName}
           </span>
-          {record.setNumber > 0 && (
-            <div className="text-xs opacity-60">{record.exerciseName}</div>
-          )}
         </div>
         <span className="text-xs opacity-40">
           {new Date(record.timestamp).toLocaleTimeString([], {

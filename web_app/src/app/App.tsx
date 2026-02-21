@@ -83,6 +83,7 @@ export default function App() {
     reps,
     sets,
     isResting,
+    activeTime,
   } = useAppSelector(
     (s) => ({
       config: s.machine.config,
@@ -94,6 +95,7 @@ export default function App() {
       reps: s.machine.reps,
       sets: s.machine.sets,
       isResting: s.machine.isResting,
+      activeTime: s.machine.activeTime,
     }),
     shallowEqual
   );
@@ -124,6 +126,24 @@ export default function App() {
     '/set_rest_bell.mp3': [],
     '/workout_bell.mp3': [],
   });
+  const restStartRef = useRef<number | null>(null);
+  const restBellRungRef = useRef<boolean>(false);
+
+  // Reset bell flag only when rest starts to avoid repeated ringing when
+  // `activeTime` updates while resting.
+  useEffect(() => {
+    if (isResting) {
+      restBellRungRef.current = false;
+    }
+  }, [isResting]);
+
+  const getRestInfo = useCallback(() => {
+    // Return configured rest total and formatted minutes/seconds.
+    const totalConfigured = repTarget.restMinutes * 60 + repTarget.restSeconds;
+    const mins = Math.floor(totalConfigured / 60);
+    const secs = Math.floor(totalConfigured % 60);
+    return { totalConfigured, mins, secs };
+  }, [repTarget]);
 
   // --- Helpers ---
   const notify = useCallback(
@@ -278,7 +298,6 @@ export default function App() {
 
       const eventType = data.event ?? 'position';
       if (eventType === 'rep') {
-        bumpWakeLock();
         if (data.name === 'right' || data.name === 'left') {
           dispatch(applyRepCompleted(data.name));
         }
@@ -456,26 +475,19 @@ export default function App() {
     exercises,
   ]);
 
-  const playBell = useCallback((bellUrl: string, times = 1) => {
+  const playBell = useCallback((bellUrl: string) => {
     const pool = bellPoolsRef.current[bellUrl] ?? [];
-
-    for (let i = 0; i < times; i += 1) {
-      window.setTimeout(() => {
-        let audio = pool.find((item) => item.paused || item.ended);
-        if (!audio) {
-          audio = new Audio(bellUrl);
-          audio.preload = 'auto';
-          audio.volume = 0.8;
-          pool.push(audio);
-          bellPoolsRef.current[bellUrl] = pool;
-        }
-
-        audio.currentTime = 0;
-        audio.play().catch(() => {
-          // no-op
-        });
-      }, i * 450);
+    let audio = pool.find((item) => item.paused || item.ended);
+    if (!audio) {
+      audio = new Audio(bellUrl);
+      audio.preload = 'auto';
+      audio.volume = 0.8;
+      pool.push(audio);
+      bellPoolsRef.current[bellUrl] = pool;
     }
+
+    audio.currentTime = 0;
+    audio.play();
   }, []);
 
   useEffect(() => {
@@ -534,39 +546,80 @@ export default function App() {
     repTarget.enabled && reps >= Math.max(0, repTarget.reps - 2) && !isResting;
 
   useEffect(() => {
+    // Robust bell and set increment logic
     if (!repTarget.enabled || isResting) return;
-    if (reps < repTarget.reps) return;
 
-    if (isFinalTargetSet) {
-      if (lastFinalBellSetRef.current !== sets) {
-        lastFinalBellSetRef.current = sets;
-        lastBellSetRef.current = sets;
-        playBell('/workout_bell.mp3', 3);
+    // If reps exceed or equal target, increment set if not already done
+    if (reps >= repTarget.reps) {
+      // Final set logic
+      if (isFinalTargetSet) {
+        if (lastFinalBellSetRef.current !== sets) {
+          lastFinalBellSetRef.current = sets;
+          lastBellSetRef.current = sets;
+          playBell('/workout_bell.mp3');
+        }
+      } else {
+        // Normal set logic
+        if (lastBellSetRef.current !== sets) {
+          lastBellSetRef.current = sets;
+          playBell('/set_rest_bell.mp3');
+        }
       }
-      return;
-    }
-
-    if (lastBellSetRef.current !== sets) {
-      lastBellSetRef.current = sets;
-      playBell('/set_rest_bell.mp3', 1);
+    } else {
+      // If reps reset or go below target, reset bell refs
+      lastBellSetRef.current = null;
+      lastFinalBellSetRef.current = null;
     }
   }, [isFinalTargetSet, isResting, playBell, repTarget, reps, sets]);
 
   useEffect(() => {
+    // clear any previous timer
     if (restTimerRef.current) {
       window.clearTimeout(restTimerRef.current);
       restTimerRef.current = null;
     }
 
-    if (!repTarget.restEnabled || !isResting) return;
-    const durationSeconds = repTarget.restMinutes * 60 + repTarget.restSeconds;
-    if (durationSeconds <= 0) return;
+    if (!repTarget.restEnabled || !isResting) {
+      restStartRef.current = null;
+      return;
+    }
 
-    restTimerRef.current = window.setTimeout(() => {
-      playBell('/set_rest_bell.mp3', 1);
-    }, durationSeconds * 1000);
-  }, [isResting, playBell, repTarget]);
+    const { totalConfigured } = getRestInfo();
+    if (totalConfigured <= 0) return;
 
+    // mark rest start
+    restStartRef.current = Date.now();
+
+    const delaySeconds = Math.max(0, totalConfigured - (activeTime || 0));
+
+    if (delaySeconds <= 0) {
+      if (!restBellRungRef.current) {
+        playBell('/set_rest_bell.mp3');
+        restBellRungRef.current = true;
+      }
+      return;
+    }
+
+    restTimerRef.current = window.setTimeout(
+      () => {
+        if (!restBellRungRef.current) {
+          playBell('/set_rest_bell.mp3');
+          restBellRungRef.current = true;
+        }
+        restTimerRef.current = null;
+      },
+      Math.ceil(delaySeconds * 1000)
+    );
+
+    return () => {
+      if (restTimerRef.current) {
+        window.clearTimeout(restTimerRef.current);
+        restTimerRef.current = null;
+      }
+    };
+  }, [isResting, playBell, repTarget, getRestInfo, activeTime]);
+
+  // Rotate set history at midnight
   useEffect(() => {
     let lastDay = new Date().toDateString();
     const timer = window.setInterval(() => {
@@ -642,6 +695,18 @@ export default function App() {
                   }`}
                 >
                   Target: {repTarget.sets} sets × {repTarget.reps} reps
+                </div>
+              )}
+              {repTarget.restEnabled && (
+                <div
+                  className={`text-xs tracking-wide uppercase text-center md:text-right ${
+                    isDarkMode ? 'text-white/50' : 'text-black/50'
+                  }`}
+                >
+                  {(() => {
+                    const info = getRestInfo();
+                    return `REST: ${info.mins}M ${info.secs}S`;
+                  })()}
                 </div>
               )}
               <button

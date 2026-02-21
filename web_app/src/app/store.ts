@@ -351,19 +351,24 @@ export const hydrateUsers = (): AppThunk => (dispatch, getState) => {
   dispatch(setUsersHydrated(true));
 };
 
-const countSetsForExercise = (
-  history: SetRecord[],
-  exerciseName: string,
-  userName?: string
-) => {
-  if (!userName) return 0;
+const resolveExerciseNameForSet = (state: MachineState): string | undefined => {
+  if (state.selectedExercise && state.selectedExercise.name)
+    return state.selectedExercise.name;
+
   const today = new Date().toDateString();
-  return history.filter((record) => {
-    if (record.exerciseName !== exerciseName) return false;
-    if (record.reps <= 0) return false;
-    if (record.userName !== userName) return false;
-    return new Date(record.timestamp).toDateString() === today;
-  }).length;
+  const userName = state.selectedUser?.name;
+  for (let i = state.history.length - 1; i >= 0; i--) {
+    const rec = state.history[i];
+    if (new Date(rec.timestamp).toDateString() !== today) continue;
+    if (userName && rec.userName !== userName) continue;
+    if (rec.exerciseName && rec.exerciseName !== 'Rest')
+      return rec.exerciseName;
+  }
+
+  if (state.exercises && state.exercises.length > 0)
+    return state.exercises[0].name;
+
+  return undefined;
 };
 
 export const startTimer = (): AppThunk => (dispatch, getState) => {
@@ -401,13 +406,43 @@ export const applyRepCompleted =
   (side: 'left' | 'right'): AppThunk =>
   (dispatch, getState) => {
     dispatch(startTimer());
-    if (side === 'right') dispatch(incrementRight());
-    else dispatch(incrementLeft());
-
-    if (getState().machine.isResting) {
-      dispatch(completeSetOrRest());
+    if (side === 'right') {
+      dispatch(incrementRight());
+    } else {
+      dispatch(incrementLeft());
     }
 
+    const state = getState().machine;
+    const repTarget = state.selectedExercise?.thresholdPercentage ?? 0;
+
+    // If reps exceed or equal target, increment set and add to history
+    if (!state.isResting && state.reps >= repTarget && repTarget > 0) {
+      const exerciseName = resolveExerciseNameForSet(state) || 'Unknown';
+      const nextSetNumber = (state.sets || 0) + 1;
+      dispatch(
+        addSetToHistory({
+          reps: state.reps,
+          duration: state.activeTime,
+          timestamp: Date.now(),
+          exerciseName: exerciseName,
+          userName: state.selectedUser?.name,
+        })
+      );
+      dispatch(stopTimer());
+      dispatch(
+        mergeState({
+          sets: nextSetNumber,
+          reps: 0,
+          repsLeft: 0,
+          repsRight: 0,
+          activeTime: 0,
+        })
+      );
+    }
+
+    if (state.isResting) {
+      dispatch(completeSetOrRest());
+    }
     dispatch(setLastMovementTime(Date.now()));
   };
 
@@ -418,16 +453,10 @@ export const setSelectedExercise =
 
     if (!state.isResting && state.reps > 0) {
       const exerciseName = state.selectedExercise?.name || 'Unknown';
-      const nextSetNumber =
-        countSetsForExercise(
-          state.history,
-          exerciseName,
-          state.selectedUser?.name
-        ) + 1;
+      const nextSetNumber = (state.sets || 0) + 1;
 
       dispatch(
         addSetToHistory({
-          setNumber: nextSetNumber,
           reps: state.reps,
           duration: state.activeTime,
           timestamp: Date.now(),
@@ -451,30 +480,19 @@ export const setSelectedExercise =
       return;
     }
 
-    const currentSetCount = countSetsForExercise(
-      state.history,
-      exercise.name,
-      state.selectedUser?.name
-    );
+    // When selecting an exercise without finishing current set, just set selected exercise
     dispatch(setSelectedExerciseState(exercise));
-    dispatch(mergeState({ sets: currentSetCount }));
   };
 
 export const completeSetOrRest = (): AppThunk => (dispatch, getState) => {
   const state = getState().machine;
 
   if (!state.isResting) {
-    const exerciseName = state.selectedExercise?.name || 'Unknown';
-    const nextSetNumber =
-      countSetsForExercise(
-        state.history,
-        exerciseName,
-        state.selectedUser?.name
-      ) + 1;
+    const exerciseName = resolveExerciseNameForSet(state) || 'Unknown';
+    const nextSetNumber = (state.sets || 0) + 1;
 
     dispatch(
       addSetToHistory({
-        setNumber: nextSetNumber,
         reps: state.reps,
         duration: state.activeTime,
         timestamp: Date.now(),
@@ -484,7 +502,6 @@ export const completeSetOrRest = (): AppThunk => (dispatch, getState) => {
     );
 
     const timeSinceLastMove = (Date.now() - state.lastMovementTime) / 1000;
-
     dispatch(
       mergeState({
         sets: nextSetNumber,
@@ -500,7 +517,6 @@ export const completeSetOrRest = (): AppThunk => (dispatch, getState) => {
 
   dispatch(
     addSetToHistory({
-      setNumber: 0,
       duration: state.activeTime,
       exerciseName: 'Rest',
       reps: 0,
@@ -515,7 +531,6 @@ export const completeSetOrRest = (): AppThunk => (dispatch, getState) => {
     })
   );
 };
-
 export const reset = (): AppThunk => (dispatch) => {
   dispatch(stopTimer());
   dispatch(
