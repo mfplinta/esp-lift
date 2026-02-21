@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useStore } from '../store';
+import { useAppSelector } from '../store';
 
 export default function DebugPanel() {
   const [fps, setFps] = useState(0);
@@ -8,8 +8,8 @@ export default function DebugPanel() {
     width: number;
     height: number;
   }>({ width: 0, height: 0 });
-  const lastMessageMs = useStore((s) =>
-    (Date.now() - s.lastMessageTime).toString().padStart(7)
+  const lastMessageMs = useAppSelector((s) =>
+    (Date.now() - s.machine.lastMessageTime).toString().padStart(7)
   );
 
   useEffect(() => {

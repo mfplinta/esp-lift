@@ -1,22 +1,31 @@
-import { useStore } from './store';
+import { selectConfig, selectHistory, selectUsers, store } from './store';
 
 export function initMachineStoreSubscriptions() {
-  (useStore.subscribe(
-    (s) => s.history,
-    (v, prev) => {
-      localStorage.setItem('workout_history_records', JSON.stringify(v));
+  if (typeof window === 'undefined') return;
+
+  let prevHistory = selectHistory(store.getState());
+  let prevConfig = selectConfig(store.getState());
+  let prevUsers = selectUsers(store.getState());
+
+  store.subscribe(() => {
+    const state = store.getState();
+    const history = selectHistory(state);
+    const config = selectConfig(state);
+    const users = selectUsers(state);
+
+    if (history !== prevHistory) {
+      localStorage.setItem('workout_history_records', JSON.stringify(history));
+      prevHistory = history;
     }
-  ),
-    useStore.subscribe(
-      (s) => s.config,
-      (v, prev) => {
-        localStorage.setItem('app_settings', JSON.stringify(v));
-      }
-    ),
-    useStore.subscribe(
-      (s) => s.users,
-      (v, prev) => {
-        localStorage.setItem('users', JSON.stringify(v));
-      }
-    ));
+
+    if (config !== prevConfig) {
+      localStorage.setItem('app_settings', JSON.stringify(config));
+      prevConfig = config;
+    }
+
+    if (users !== prevUsers) {
+      localStorage.setItem('users', JSON.stringify(users));
+      prevUsers = users;
+    }
+  });
 }

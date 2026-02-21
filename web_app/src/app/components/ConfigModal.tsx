@@ -2,8 +2,8 @@ import { ChevronDown, Dumbbell, Eye, EyeOff, Wifi, X } from 'lucide-react'; // A
 import { Switch } from '@/app/components/ui/switch';
 import { Label } from '@/app/components/ui/label';
 import { useState } from 'react';
-import { useStore } from '../store';
-import { useShallow } from 'zustand/react/shallow';
+import { shallowEqual } from 'react-redux';
+import { setConfig, useAppDispatch, useAppSelector } from '../store';
 import { HardwareConfig } from '../models';
 
 interface ConfigModalProps {
@@ -40,12 +40,13 @@ export default function ConfigModal({
     hardwareSettings.movement?.calibrationDebounceSteps ?? 25
   );
 
-  const { config, isDarkMode, setConfig } = useStore(
-    useShallow((s) => ({
-      config: s.config,
-      isDarkMode: s.config.theme === 'dark',
-      setConfig: s.setConfig,
-    }))
+  const dispatch = useAppDispatch();
+  const { config, isDarkMode } = useAppSelector(
+    (s) => ({
+      config: s.machine.config,
+      isDarkMode: s.machine.config.theme === 'dark',
+    }),
+    shallowEqual
   );
 
   const autoCompleteEnabled = !!(
@@ -56,7 +57,7 @@ export default function ConfigModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
 
@@ -119,7 +120,7 @@ export default function ConfigModal({
                   id="strict-mode"
                   checked={config.strictMode}
                   onCheckedChange={(checked) =>
-                    setConfig({ strictMode: checked })
+                    dispatch(setConfig({ strictMode: checked }))
                   }
                   className="ml-4"
                 />
@@ -145,11 +146,13 @@ export default function ConfigModal({
                   id="auto-set"
                   checked={autoCompleteEnabled}
                   onCheckedChange={(checked) =>
-                    setConfig({
-                      autoCompleteSecs: checked
-                        ? config.autoCompleteSecs || 10
-                        : 0,
-                    })
+                    dispatch(
+                      setConfig({
+                        autoCompleteSecs: checked
+                          ? config.autoCompleteSecs || 10
+                          : 0,
+                      })
+                    )
                   }
                   className="ml-4"
                 />
@@ -169,7 +172,11 @@ export default function ConfigModal({
                     step="5"
                     value={config.autoCompleteSecs}
                     onChange={(e) =>
-                      setConfig({ autoCompleteSecs: Number(e.target.value) })
+                      dispatch(
+                        setConfig({
+                          autoCompleteSecs: Number(e.target.value),
+                        })
+                      )
                     }
                     className={`w-full mt-2 h-2 rounded-lg appearance-none cursor-pointer ${
                       isDarkMode ? 'bg-gray-700' : 'bg-gray-300'
@@ -223,7 +230,7 @@ export default function ConfigModal({
                     id="auto-set"
                     checked={config.debugMode}
                     onCheckedChange={(checked) =>
-                      setConfig({ debugMode: checked })
+                      dispatch(setConfig({ debugMode: checked }))
                     }
                     className="ml-4 "
                   />

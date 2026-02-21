@@ -1,17 +1,12 @@
 import { User } from 'lucide-react';
-import { useStore } from '../store';
-import { useShallow } from 'zustand/react/shallow';
+import { useAppSelector } from '../store';
 
 interface ConfigModalProps {
   onClick: () => void;
 }
 
 export default function UserAvatarButton({ onClick }: ConfigModalProps) {
-  const { selectedUser } = useStore(
-    useShallow((s) => ({
-      selectedUser: s.selectedUser,
-    }))
-  );
+  const selectedUser = useAppSelector((s) => s.machine.selectedUser);
 
   const userInitial = selectedUser?.name?.trim().charAt(0).toUpperCase();
 

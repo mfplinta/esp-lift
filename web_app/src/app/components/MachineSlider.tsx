@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { useStore } from '../store';
-import { useShallow } from 'zustand/react/shallow';
+import { shallowEqual } from 'react-redux';
+import { setSliderThreshold, useAppDispatch, useAppSelector } from '../store';
 
 interface MachineSliderProps {
   isLeftSlider: boolean;
@@ -15,24 +15,24 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
   const innerRef = useRef<HTMLDivElement | null>(null);
   const dragThresholdRef = useRef<number | null>(null);
 
-  const { sliderThreshold, reps, position, isDarkMode, setSliderThreshold } =
-    useStore(
-      useShallow((s) => ({
-        sliderThreshold: s.sliderThreshold,
-        reps: s.isAlternating
-          ? isLeftSlider
-            ? s.repsLeft
-            : s.repsRight
-          : s.reps,
-        position: s.isAlternating
-          ? isLeftSlider
-            ? s.sliderPositionLeft
-            : s.sliderPositionRight
-          : s.lastSliderPosition,
-        isDarkMode: s.config.theme === 'dark',
-        setSliderThreshold: s.setSliderThreshold,
-      }))
-    );
+  const dispatch = useAppDispatch();
+  const { sliderThreshold, reps, position, isDarkMode } = useAppSelector(
+    (s) => ({
+      sliderThreshold: s.machine.sliderThreshold,
+      reps: s.machine.isAlternating
+        ? isLeftSlider
+          ? s.machine.repsLeft
+          : s.machine.repsRight
+        : s.machine.reps,
+      position: s.machine.isAlternating
+        ? isLeftSlider
+          ? s.machine.sliderPositionLeft
+          : s.machine.sliderPositionRight
+        : s.machine.lastSliderPosition,
+      isDarkMode: s.machine.config.theme === 'dark',
+    }),
+    shallowEqual
+  );
 
   const prevReps = useRef(reps);
 
@@ -77,7 +77,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
       const finalValue =
         dragThresholdRef.current ?? dragThreshold ?? sliderThreshold;
       setDragThreshold(null);
-      setSliderThreshold(finalValue);
+      dispatch(setSliderThreshold(finalValue));
       updateNearState(e.clientY, finalValue);
     };
 

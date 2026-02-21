@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Plus, X } from 'lucide-react';
-import { useStore } from '../store';
 import { Exercise } from '../models';
-import { useShallow } from 'zustand/react/shallow';
 import { Switch } from './ui/switch';
+import { shallowEqual } from 'react-redux';
+import { setSelectedExercise, useAppDispatch, useAppSelector } from '../store';
 
 interface ExerciseSelectorProps {
   onAddExercise: (ex: Exercise) => void;
@@ -19,16 +19,31 @@ export default function ExerciseSelector({
   const [newExerciseName, setNewExerciseName] = useState('');
   const [newThreshold, setNewThreshold] = useState(70);
   const [type, setType] = useState<'singular' | 'alternating'>('singular');
+  const [categoryInput, setCategoryInput] = useState('');
+  const [categoryIsNew, setCategoryIsNew] = useState(false);
+  const [showCategoryOptions, setShowCategoryOptions] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    null
+  );
+  const suppressCategoryBlurRef = useRef(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { exercises, selectedExercise, isDarkMode, setSelectedExercise } =
-    useStore(
-      useShallow((s) => ({
-        exercises: s.exercises,
-        selectedExercise: s.selectedExercise,
-        isDarkMode: s.config.theme === 'dark',
-        setSelectedExercise: s.setSelectedExercise,
-      }))
+  const normalizeCategoryKey = (value: string) =>
+    value.trim().toLowerCase().replace(/\s+/g, '-').replace(/-+/g, '-');
+
+  const formatCategoryLabel = (value: string) =>
+    value.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+  const dispatch = useAppDispatch();
+  const { exercises, categories, selectedExercise, isDarkMode } =
+    useAppSelector(
+      (s) => ({
+        exercises: s.machine.exercises,
+        categories: s.machine.categories,
+        selectedExercise: s.machine.selectedExercise,
+        isDarkMode: s.machine.config.theme === 'dark',
+      }),
+      shallowEqual
     );
 
   // Close dropdown when clicking outside
@@ -47,20 +62,83 @@ export default function ExerciseSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const resetAddExerciseForm = () => {
+    suppressCategoryBlurRef.current = true;
+    setNewExerciseName('');
+    setNewThreshold(70);
+    setType('singular');
+    setCategoryInput('');
+    setCategoryIsNew(false);
+    setSelectedCategoryId(null);
+    setShowCategoryOptions(false);
+    setShowAddDialog(false);
+    setIsOpen(false);
+    window.setTimeout(() => {
+      suppressCategoryBlurRef.current = false;
+    }, 200);
+  };
+
   const handleAddExercise = () => {
     if (newExerciseName.trim()) {
+      const trimmedCategory = categoryInput.trim();
+      const normalizedCategory = normalizeCategoryKey(trimmedCategory);
+      // Find exact match by name (case-insensitive, normalized)
+      const matchingCategory = categories.find(
+        (category) => normalizeCategoryKey(category.name) === normalizedCategory
+      );
+      const isNewCategory =
+        !!normalizedCategory && !matchingCategory && categoryIsNew;
+      const categoryName = trimmedCategory || 'General';
+
       onAddExercise({
         name: newExerciseName,
         thresholdPercentage: newThreshold,
         type: type,
+        // If new, send only categoryName; if existing, send only categoryId
+        ...(isNewCategory
+          ? { categoryName }
+          : { categoryId: selectedCategoryId ?? matchingCategory?.id }),
       });
-      setNewExerciseName('');
-      setNewThreshold(70);
-      setType('singular');
-      setShowAddDialog(false);
-      setIsOpen(false);
+      resetAddExerciseForm();
     }
   };
+
+  const groupedExercises = categories.reduce(
+    (
+      acc: Record<string, { id: string; name: string; items: Exercise[] }>,
+      category
+    ) => {
+      acc[category.id] = {
+        id: category.id,
+        name: formatCategoryLabel(category.name),
+        items: exercises.filter(
+          (exercise) => exercise.categoryId === category.id
+        ),
+      };
+      return acc;
+    },
+    {}
+  );
+
+  const uncategorizedExercises = exercises.filter(
+    (exercise) => !exercise.categoryId
+  );
+
+  const categoryGroups = [
+    ...Object.values(groupedExercises),
+    ...(uncategorizedExercises.length
+      ? [{ id: 'uncategorized', name: 'Other', items: uncategorizedExercises }]
+      : []),
+  ].filter((group) => group.items.length > 0);
+
+  const normalizedCategoryInput = normalizeCategoryKey(categoryInput);
+  const filteredCategories = categories.filter((category) =>
+    normalizeCategoryKey(category.name).includes(normalizedCategoryInput)
+  );
+  const categoryExactMatch = categories.some(
+    (category) =>
+      normalizeCategoryKey(category.name) === normalizedCategoryInput
+  );
 
   return (
     <div ref={dropdownRef} className="flex flex-col items-end sm:items-center">
@@ -96,55 +174,67 @@ export default function ExerciseSelector({
         >
           {/* Rest of your existing dropdown content stays exactly the same */}
           <div className="max-h-[calc(100vh-120px)] sm:max-h-80 overflow-y-auto">
-            {exercises.map((exercise) => (
-              <div
-                key={exercise.name}
-                className={`group relative w-full transition-colors ${
-                  selectedExercise?.name === exercise.name
-                    ? isDarkMode
-                      ? 'bg-gray-800'
-                      : 'bg-gray-200'
-                    : isDarkMode
-                      ? 'hover:bg-gray-800'
-                      : 'hover:bg-gray-100'
-                }`}
-              >
-                <button
-                  onClick={() => {
-                    setSelectedExercise(exercise);
-                    setIsOpen(false);
-                  }}
-                  className="w-full px-4 py-3 text-left"
+            {categoryGroups.map((group) => (
+              <div key={group.id}>
+                <div
+                  className={`px-4 py-2 text-xs font-bold uppercase tracking-widest ${
+                    isDarkMode
+                      ? 'text-gray-300 bg-gray-900/80'
+                      : 'text-gray-600 bg-white/80'
+                  }`}
                 >
-                  <div className="flex justify-between items-center pr-8">
-                    <span className="font-medium">{exercise.name}</span>
-                    <span
-                      className={`text-sm transition-opacity ${
-                        isDarkMode ? 'text-gray-400' : 'text-gray-600'
-                      } ${exercises.length > 1 ? 'opacity-0 group-hover:opacity-100' : ''}`}
-                    >
-                      {exercise.thresholdPercentage.toFixed(0)}%
-                    </span>
-                  </div>
-                </button>
-
-                {/* Delete Button - Keep existing hover behavior */}
-                {exercises.length > 1 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteExercise(exercise.name);
-                    }}
-                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${
-                      isDarkMode
-                        ? 'hover:bg-red-900 hover:text-red-300'
-                        : 'hover:bg-red-100 hover:text-red-600'
+                  {group.name}
+                </div>
+                {group.items.map((exercise) => (
+                  <div
+                    key={exercise.name}
+                    className={`group relative w-full transition-colors ${
+                      selectedExercise?.name === exercise.name
+                        ? isDarkMode
+                          ? 'bg-gray-800'
+                          : 'bg-gray-200'
+                        : isDarkMode
+                          ? 'hover:bg-gray-800'
+                          : 'hover:bg-gray-100'
                     }`}
-                    aria-label="Delete exercise"
                   >
-                    <X size={16} />
-                  </button>
-                )}
+                    <button
+                      onClick={() => {
+                        dispatch(setSelectedExercise(exercise));
+                        setIsOpen(false);
+                      }}
+                      className="w-full px-4 py-3 text-left"
+                    >
+                      <div className="flex justify-between items-center pr-8">
+                        <span className="font-medium">{exercise.name}</span>
+                        <span
+                          className={`text-sm transition-opacity ${
+                            isDarkMode ? 'text-gray-400' : 'text-gray-600'
+                          } ${exercises.length > 1 ? 'opacity-0 group-hover:opacity-100' : ''}`}
+                        >
+                          {exercise.thresholdPercentage.toFixed(0)}%
+                        </span>
+                      </div>
+                    </button>
+
+                    {exercises.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteExercise(exercise.name);
+                        }}
+                        className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${
+                          isDarkMode
+                            ? 'hover:bg-red-900 hover:text-red-300'
+                            : 'hover:bg-red-100 hover:text-red-600'
+                        }`}
+                        aria-label="Delete exercise"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             ))}
 
@@ -229,6 +319,106 @@ export default function ExerciseSelector({
 
               <div className="mb-3">
                 <label className="text-sm font-medium mb-2 block">
+                  Category
+                </label>
+                <div className="relative">
+                  {categoryIsNew && categoryInput.trim() && (
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 rounded-md bg-green-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-800">
+                      new:
+                    </span>
+                  )}
+                  <input
+                    type="text"
+                    placeholder="Select or type a category"
+                    value={categoryInput}
+                    onChange={(e) => {
+                      setCategoryInput(e.target.value);
+                      setCategoryIsNew(false);
+                      setSelectedCategoryId(null);
+                      setShowCategoryOptions(true);
+                    }}
+                    onFocus={() => setShowCategoryOptions(true)}
+                    onBlur={(event) => {
+                      const nextValue = event.currentTarget.value;
+                      window.setTimeout(() => {
+                        if (suppressCategoryBlurRef.current) return;
+                        setShowCategoryOptions(false);
+                        if (nextValue.trim() && !categoryExactMatch) {
+                          setCategoryIsNew(true);
+                          setCategoryInput(formatCategoryLabel(nextValue));
+                        }
+                      }, 150);
+                    }}
+                    className={`w-full rounded-lg border py-2 ${
+                      categoryIsNew ? 'pl-20 pr-3' : 'px-3'
+                    } ${
+                      isDarkMode
+                        ? 'bg-gray-900 border-gray-700 text-white placeholder-gray-500'
+                        : 'bg-white border-gray-300 text-black placeholder-gray-400'
+                    }`}
+                  />
+
+                  {showCategoryOptions && (
+                    <div
+                      className={`absolute z-20 mt-2 w-full rounded-lg border shadow-lg ${
+                        isDarkMode
+                          ? 'bg-gray-900 border-gray-700'
+                          : 'bg-white border-gray-200'
+                      }`}
+                    >
+                      <div className="max-h-40 overflow-y-auto">
+                        {filteredCategories.map((category) => (
+                          <button
+                            key={category.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setCategoryInput(
+                                formatCategoryLabel(category.name)
+                              );
+                              setCategoryIsNew(false);
+                              setSelectedCategoryId(category.id);
+                              setShowCategoryOptions(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                              isDarkMode
+                                ? 'hover:bg-gray-800 text-gray-100'
+                                : 'hover:bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {formatCategoryLabel(category.name)}
+                          </button>
+                        ))}
+                        {categoryInput.trim() && !categoryExactMatch && (
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setCategoryIsNew(true);
+                              setCategoryInput(
+                                formatCategoryLabel(categoryInput)
+                              );
+                              setSelectedCategoryId(null);
+                              setShowCategoryOptions(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 ${
+                              isDarkMode
+                                ? 'text-green-300 hover:bg-gray-800'
+                                : 'text-green-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            <Plus size={14} />
+                            Create: {categoryInput.trim()}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <label className="text-sm font-medium mb-2 block">
                   Exercise Type
                 </label>
                 <div className="flex items-center justify-between gap-3">
@@ -278,8 +468,7 @@ export default function ExerciseSelector({
                 </button>
                 <button
                   onClick={() => {
-                    setShowAddDialog(false);
-                    setNewExerciseName('');
+                    resetAddExerciseForm();
                   }}
                   className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
                     isDarkMode

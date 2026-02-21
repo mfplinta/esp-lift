@@ -1,8 +1,14 @@
 import { User, X, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import AddUserModal from './AddUserModal';
-import { useStore } from '../store';
-import { useShallow } from 'zustand/react/shallow';
+import { shallowEqual } from 'react-redux';
+import {
+  addUser,
+  deleteUser,
+  selectUser,
+  useAppDispatch,
+  useAppSelector,
+} from '../store';
 
 interface AddUserModalProps {
   isOpen: boolean;
@@ -13,20 +19,19 @@ export default function UserSelection({ isOpen, onClose }: AddUserModalProps) {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const { isDarkMode, users, selectUser, addUser, deleteUser } = useStore(
-    useShallow((s) => ({
-      isDarkMode: s.config.theme === 'dark',
-      users: s.users,
-      selectUser: s.selectUser,
-      addUser: s.addUser,
-      deleteUser: s.deleteUser,
-    }))
+  const dispatch = useAppDispatch();
+  const { isDarkMode, users } = useAppSelector(
+    (s) => ({
+      isDarkMode: s.machine.config.theme === 'dark',
+      users: s.machine.users,
+    }),
+    shallowEqual
   );
 
   if (!isOpen) return null;
 
   const handleSelectUser = (name: string) => {
-    selectUser(name);
+    dispatch(selectUser(name));
     onClose();
   };
 
@@ -37,7 +42,7 @@ export default function UserSelection({ isOpen, onClose }: AddUserModalProps) {
 
   const confirmDelete = (name: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteUser(name);
+    dispatch(deleteUser(name));
     setDeleteConfirm(null);
   };
 
@@ -194,7 +199,7 @@ export default function UserSelection({ isOpen, onClose }: AddUserModalProps) {
       <AddUserModal
         isOpen={showAddUserModal}
         onClose={() => setShowAddUserModal(false)}
-        onAddUser={addUser}
+        onAddUser={(name, color) => dispatch(addUser({ name, color }))}
       />
     </>
   );

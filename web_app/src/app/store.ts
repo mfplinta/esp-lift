@@ -1,8 +1,16 @@
-import { create, StateCreator } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
-import { Exercise, SetRecord, AppConfig, User } from './models';
+import {
+  configureStore,
+  createSlice,
+  type PayloadAction,
+} from '@reduxjs/toolkit';
+import type { Action } from 'redux';
+import type { ThunkAction } from '@reduxjs/toolkit';
+import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
+import { setupListeners } from '@reduxjs/toolkit/query';
+import { Category, Exercise, SetRecord, AppConfig, User } from './models';
+import { espApi } from './services/espApi';
 
-type MachineStore = {
+type MachineState = {
   /* Machine */
   selectedExercise?: Exercise;
   sliderPositionLeft: number;
@@ -19,59 +27,26 @@ type MachineStore = {
   lastMovementTime: number;
   lastMessageTime: number;
   timerIntervalId: number | null;
-  startTimer: () => void;
-  stopTimer: () => void;
-  tick: () => void;
   reps: number;
   isAlternating: boolean;
 
   /* Storage */
   exercises: Exercise[];
+  categories: Category[];
   history: SetRecord[];
   isHistoryHydrated: boolean;
-  hydrateSetHistory: () => void;
 
   /* Config */
   config: AppConfig;
   isConfigHydrated: boolean;
-  hydrateConfig: () => void;
-  setConfig: (config: Partial<AppConfig>) => void;
-  toggleTheme: () => void;
 
   /* Users */
   users: User[];
   selectedUser?: User;
   isUsersHydrated: boolean;
-  hydrateUsers: () => void;
-  addUser: (name: string, color: string) => void;
-  deleteUser: (name: string) => void;
-  selectUser: (name: string) => void;
-
-  setSelectedExercise: (ex: Exercise) => void;
-  setSliderPositionLeft: (pos: number) => void;
-  setSliderPositionRight: (pos: number) => void;
-  setSliderThreshold: (v: number) => void;
-  incrementLeft: () => void;
-  incrementRight: () => void;
-  processRep: (pos: number, isRight: boolean) => void;
-  applyRepCompleted: (side: 'left' | 'right') => void;
-  setLastMessageTime: (time: number) => void;
-
-  setExercises: (exs: Exercise[]) => void;
-  addSetToHistory: (s: SetRecord) => void;
-  addRestToHistory: () => void;
-  clearHistory: () => void;
-
-  completeSetOrRest: () => void;
-  reset: () => void;
 };
 
-const storeCreator: StateCreator<
-  MachineStore,
-  [],
-  [['zustand/subscribeWithSelector', never]]
-> = (set, get) => ({
-  /* Machine */
+const initialState: MachineState = {
   selectedExercise: undefined,
   sliderPositionLeft: 0,
   sliderPositionRight: 0,
@@ -87,60 +62,12 @@ const storeCreator: StateCreator<
   lastMovementTime: Date.now(),
   lastMessageTime: Date.now(),
   timerIntervalId: null,
-  startTimer: () => {
-    if (get().timerIntervalId) return;
-
-    const id = window.setInterval(() => {
-      get().tick();
-    }, 100);
-
-    set({ timerIntervalId: id });
-  },
-  stopTimer: () => {
-    const id = get().timerIntervalId;
-    if (id) {
-      clearInterval(id);
-      set({ timerIntervalId: null });
-    }
-  },
-  tick: () => {
-    const {
-      activeTime,
-      isResting,
-      config,
-      lastMovementTime,
-      reps,
-      completeSetOrRest: completeSet,
-    } = get();
-
-    set({ activeTime: activeTime + 0.1 });
-
-    if (!isResting && reps > 0 && config.autoCompleteSecs > 0) {
-      const secondsSinceMovement = (Date.now() - lastMovementTime) / 1000;
-      if (secondsSinceMovement >= config.autoCompleteSecs) {
-        completeSet();
-      }
-    }
-  },
   reps: 0,
   isAlternating: false,
-
-  /* Storage */
   exercises: [],
+  categories: [],
   history: [],
   isHistoryHydrated: false,
-  hydrateSetHistory: () => {
-    const saved = localStorage.getItem('workout_history_records');
-    if (saved) {
-      try {
-        set({ isHistoryHydrated: true, history: JSON.parse(saved) });
-        return;
-      } catch {}
-    }
-    set({ isHistoryHydrated: true });
-  },
-
-  /* Config */
   config: {
     theme: window.matchMedia('(prefers-color-scheme: dark)').matches
       ? 'dark'
@@ -150,234 +77,455 @@ const storeCreator: StateCreator<
     debugMode: false,
   },
   isConfigHydrated: false,
-  hydrateConfig: () => {
-    if (typeof window !== 'undefined') {
-      const savedConfig = localStorage.getItem('app_settings');
-      if (savedConfig) {
-        try {
-          set({ isConfigHydrated: true, config: JSON.parse(savedConfig) });
-          return;
-        } catch {}
-      }
-      localStorage.setItem('app_settings', JSON.stringify(get().config));
-    }
-    set({ isConfigHydrated: true });
-  },
-  setConfig: (config: Partial<AppConfig>) => {
-    const merged = { ...get().config, ...config };
-    localStorage.setItem('app_settings', JSON.stringify(merged));
-    set({ config: merged });
-  },
-  toggleTheme: () =>
-    set((s) => ({
-      config: {
-        ...s.config,
-        theme: s.config.theme === 'light' ? 'dark' : 'light',
-      },
-    })),
-
-  /* Users */
   users: [{ name: 'Default User', color: '#4F46E5' }],
   selectedUser: undefined,
   isUsersHydrated: false,
-  hydrateUsers: () => {
-    if (typeof window !== 'undefined') {
-      const savedUsers = localStorage.getItem('users');
-      if (savedUsers) {
-        try {
-          set({ isUsersHydrated: true, users: JSON.parse(savedUsers) });
-          return;
-        } catch {}
+};
+
+const machineSlice = createSlice({
+  name: 'machine',
+  initialState,
+  reducers: {
+    mergeState: (state, action: PayloadAction<Partial<MachineState>>) => {
+      Object.assign(state, action.payload);
+    },
+    setSelectedExerciseState: (
+      state,
+      action: PayloadAction<Exercise | undefined>
+    ) => {
+      state.selectedExercise = action.payload;
+      if (action.payload) {
+        state.isAlternating = action.payload.type === 'alternating';
+        state.sliderThreshold = action.payload.thresholdPercentage;
       }
-      localStorage.setItem('users', JSON.stringify(get().users));
-    }
-    set({ isUsersHydrated: true });
-  },
-  addUser(name: string, color: string) {
-    const newUser = { name, color };
-    const updatedUsers = [...get().users, newUser];
-    set({ users: updatedUsers });
-  },
-  deleteUser(name: string) {
-    const updatedUsers = get().users.filter((u) => u.name !== name);
-    set({ users: updatedUsers });
-
-    if (get().selectedUser?.name === name) {
-      set({ selectedUser: undefined });
-    }
-  },
-  selectUser(name: string) {
-    const user = get().users.find((u) => u.name === name);
-    set({ selectedUser: user });
-  },
-
-  setSelectedExercise: (ex) => {
-    const {
-      isResting,
-      reps,
-      sets,
-      activeTime,
-      selectedExercise,
-      selectedUser,
-      addSetToHistory,
-      stopTimer,
-    } = get();
-
-    if (!isResting && reps > 0) {
-      addSetToHistory({
-        setNumber: sets + 1,
-        reps: reps,
-        duration: activeTime,
-        timestamp: Date.now(),
-        exerciseName: selectedExercise?.name || 'Unknown',
-        userName: selectedUser?.name,
+    },
+    setSliderPositionLeft: (state, action: PayloadAction<number>) => {
+      state.sliderPositionLeft = action.payload;
+      state.lastSliderPosition = action.payload;
+      state.lastMovementTime = Date.now();
+    },
+    setSliderPositionRight: (state, action: PayloadAction<number>) => {
+      state.sliderPositionRight = action.payload;
+      state.lastSliderPosition = action.payload;
+      state.lastMovementTime = Date.now();
+    },
+    setSliderThreshold: (state, action: PayloadAction<number>) => {
+      state.sliderThreshold = action.payload;
+    },
+    incrementLeft: (state) => {
+      state.repsLeft += 1;
+      state.reps += state.isAlternating ? 0.5 : 1;
+    },
+    incrementRight: (state) => {
+      state.repsRight += 1;
+      state.reps += state.isAlternating ? 0.5 : 1;
+    },
+    setLastMessageTime: (state, action: PayloadAction<number>) => {
+      state.lastMessageTime = action.payload;
+    },
+    setLastMovementTime: (state, action: PayloadAction<number>) => {
+      state.lastMovementTime = action.payload;
+    },
+    setTimerIntervalId: (state, action: PayloadAction<number | null>) => {
+      state.timerIntervalId = action.payload;
+    },
+    incrementActiveTime: (state, action: PayloadAction<number>) => {
+      state.activeTime += action.payload;
+    },
+    setExerciseData: (
+      state,
+      action: PayloadAction<{ exercises: Exercise[]; categories: Category[] }>
+    ) => {
+      state.exercises = action.payload.exercises;
+      state.categories = action.payload.categories;
+    },
+    addSetToHistory: (state, action: PayloadAction<SetRecord>) => {
+      state.history.push(action.payload);
+    },
+    clearHistory: (state) => {
+      state.history = [];
+    },
+    setHistory: (state, action: PayloadAction<SetRecord[]>) => {
+      state.history = action.payload;
+    },
+    setHistoryHydrated: (state, action: PayloadAction<boolean>) => {
+      state.isHistoryHydrated = action.payload;
+    },
+    setConfigState: (state, action: PayloadAction<AppConfig>) => {
+      state.config = action.payload;
+    },
+    updateConfig: (state, action: PayloadAction<Partial<AppConfig>>) => {
+      state.config = { ...state.config, ...action.payload };
+    },
+    toggleTheme: (state) => {
+      state.config = {
+        ...state.config,
+        theme: state.config.theme === 'light' ? 'dark' : 'light',
+      };
+    },
+    setConfigHydrated: (state, action: PayloadAction<boolean>) => {
+      state.isConfigHydrated = action.payload;
+    },
+    setUsers: (state, action: PayloadAction<User[]>) => {
+      state.users = action.payload;
+    },
+    addUser: (
+      state,
+      action: PayloadAction<{ name: string; color: string }>
+    ) => {
+      state.users.push({
+        name: action.payload.name,
+        color: action.payload.color,
       });
-      stopTimer();
-      set({
-        sets: sets + 1,
-        reps: 0,
-        repsLeft: 0,
-        repsRight: 0,
-        activeTime: 0,
-        sliderThreshold: ex.thresholdPercentage,
-        selectedExercise: ex,
-        isAlternating: ex.type === 'alternating',
-      });
+    },
+    deleteUser: (state, action: PayloadAction<string>) => {
+      state.users = state.users.filter((u) => u.name !== action.payload);
+      if (state.selectedUser?.name === action.payload) {
+        state.selectedUser = undefined;
+      }
+    },
+    selectUser: (state, action: PayloadAction<string>) => {
+      state.selectedUser = state.users.find((u) => u.name === action.payload);
+    },
+    setUsersHydrated: (state, action: PayloadAction<boolean>) => {
+      state.isUsersHydrated = action.payload;
+    },
+    updateExerciseThreshold: (
+      state,
+      action: PayloadAction<{ name: string; thresholdPercentage: number }>
+    ) => {
+      if (state.selectedExercise?.name === action.payload.name) {
+        state.selectedExercise = {
+          ...state.selectedExercise,
+          thresholdPercentage: action.payload.thresholdPercentage,
+        };
+      }
+      const exercise = state.exercises.find(
+        (ex) => ex.name === action.payload.name
+      );
+      if (exercise) {
+        exercise.thresholdPercentage = action.payload.thresholdPercentage;
+      }
+    },
+  },
+});
+
+export const store = configureStore({
+  reducer: {
+    machine: machineSlice.reducer,
+    [espApi.reducerPath]: espApi.reducer,
+  },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(espApi.middleware),
+});
+
+setupListeners(store.dispatch);
+
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
+export type AppThunk<ReturnType = void> = ThunkAction<
+  ReturnType,
+  RootState,
+  unknown,
+  Action
+>;
+
+export const useAppDispatch = () => useDispatch<AppDispatch>();
+export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
+
+export const selectConfig = (state: RootState) => state.machine.config;
+export const selectHistory = (state: RootState) => state.machine.history;
+export const selectUsers = (state: RootState) => state.machine.users;
+
+const {
+  mergeState,
+  setSelectedExerciseState,
+  setSliderPositionLeft,
+  setSliderPositionRight,
+  setSliderThreshold,
+  incrementLeft,
+  incrementRight,
+  setLastMessageTime,
+  setLastMovementTime,
+  setTimerIntervalId,
+  incrementActiveTime,
+  setExerciseData,
+  addSetToHistory,
+  clearHistory,
+  setHistory,
+  setHistoryHydrated,
+  setConfigState,
+  updateConfig,
+  toggleTheme,
+  setConfigHydrated,
+  setUsers,
+  addUser,
+  deleteUser,
+  selectUser,
+  setUsersHydrated,
+  updateExerciseThreshold,
+} = machineSlice.actions;
+
+export {
+  setSliderPositionLeft,
+  setSliderPositionRight,
+  setSliderThreshold,
+  setLastMessageTime,
+  setExerciseData,
+  updateConfig as setConfig,
+  toggleTheme,
+  addUser,
+  deleteUser,
+  selectUser,
+  clearHistory,
+  updateExerciseThreshold,
+};
+
+export const clearHistoryForDate =
+  (dateStr: string, userName?: string): AppThunk =>
+  (dispatch, getState) => {
+    const filtered = getState().machine.history.filter((record) => {
+      if (userName && record.userName !== userName) return true;
+      return new Date(record.timestamp).toDateString() !== dateStr;
+    });
+    dispatch(setHistory(filtered));
+  };
+
+export const clearAllHistory =
+  (userName?: string): AppThunk =>
+  (dispatch, getState) => {
+    if (!userName) {
+      dispatch(clearHistory());
+      return;
+    }
+    const filtered = getState().machine.history.filter(
+      (record) => record.userName !== userName
+    );
+    dispatch(setHistory(filtered));
+  };
+
+export const hydrateSetHistory = (): AppThunk => (dispatch, getState) => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('workout_history_records');
+    if (saved) {
+      try {
+        dispatch(setHistory(JSON.parse(saved)));
+      } catch {}
+    }
+  }
+  dispatch(setHistoryHydrated(true));
+};
+
+export const hydrateConfig = (): AppThunk => (dispatch, getState) => {
+  if (typeof window !== 'undefined') {
+    const savedConfig = localStorage.getItem('app_settings');
+    if (savedConfig) {
+      try {
+        dispatch(setConfigState(JSON.parse(savedConfig)));
+        dispatch(setConfigHydrated(true));
+        return;
+      } catch {}
     } else {
-      set({
-        selectedExercise: ex,
-        isAlternating: ex.type === 'alternating',
-        sliderThreshold: ex.thresholdPercentage,
-      });
+      localStorage.setItem(
+        'app_settings',
+        JSON.stringify(getState().machine.config)
+      );
     }
-  },
+  }
+  dispatch(setConfigHydrated(true));
+};
 
-  setSliderPositionLeft: (pos) => {
-    set({
-      sliderPositionLeft: pos,
-      lastSliderPosition: pos,
-      lastMovementTime: Date.now(),
-    });
-  },
+export const hydrateUsers = (): AppThunk => (dispatch, getState) => {
+  if (typeof window !== 'undefined') {
+    const savedUsers = localStorage.getItem('users');
+    if (savedUsers) {
+      try {
+        dispatch(setUsers(JSON.parse(savedUsers)));
+        dispatch(setUsersHydrated(true));
+        return;
+      } catch {}
+    } else {
+      localStorage.setItem('users', JSON.stringify(getState().machine.users));
+    }
+  }
+  dispatch(setUsersHydrated(true));
+};
 
-  setSliderPositionRight: (pos) => {
-    set({
-      sliderPositionRight: pos,
-      lastSliderPosition: pos,
-      lastMovementTime: Date.now(),
-    });
-  },
+const countSetsForExercise = (
+  history: SetRecord[],
+  exerciseName: string,
+  userName?: string
+) => {
+  if (!userName) return 0;
+  const today = new Date().toDateString();
+  return history.filter((record) => {
+    if (record.exerciseName !== exerciseName) return false;
+    if (record.reps <= 0) return false;
+    if (record.userName !== userName) return false;
+    return new Date(record.timestamp).toDateString() === today;
+  }).length;
+};
 
-  setSliderThreshold: (v) => set({ sliderThreshold: v }),
+export const startTimer = (): AppThunk => (dispatch, getState) => {
+  const { timerIntervalId } = getState().machine;
+  if (timerIntervalId) return;
 
-  incrementLeft: () =>
-    set((s) => ({
-      repsLeft: s.repsLeft + 1,
-      reps: s.reps + (s.isAlternating ? 0.5 : 1),
-    })),
-  incrementRight: () =>
-    set((s) => ({
-      repsRight: s.repsRight + 1,
-      reps: s.reps + (s.isAlternating ? 0.5 : 1),
-    })),
+  const id = window.setInterval(() => {
+    dispatch(tick());
+  }, 100);
 
-  processRep: (pos: number, isRight: boolean) => {
-    void pos;
-    void isRight;
-  },
+  dispatch(setTimerIntervalId(id));
+};
 
-  applyRepCompleted: (side: 'left' | 'right') => {
-    const {
-      incrementLeft,
-      incrementRight,
-      startTimer,
-      isResting,
-      completeSetOrRest,
-    } = get();
+export const stopTimer = (): AppThunk => (dispatch, getState) => {
+  const { timerIntervalId } = getState().machine;
+  if (timerIntervalId) {
+    clearInterval(timerIntervalId);
+  }
+  dispatch(setTimerIntervalId(null));
+};
 
-    startTimer();
-    if (side === 'right') incrementRight();
-    else incrementLeft();
-    if (isResting) completeSetOrRest();
+export const tick = (): AppThunk => (dispatch, getState) => {
+  const state = getState().machine;
+  dispatch(incrementActiveTime(0.1));
 
-    set({ lastMovementTime: Date.now() });
-  },
+  if (!state.isResting && state.reps > 0 && state.config.autoCompleteSecs > 0) {
+    const secondsSinceMovement = (Date.now() - state.lastMovementTime) / 1000;
+    if (secondsSinceMovement >= state.config.autoCompleteSecs) {
+      dispatch(completeSetOrRest());
+    }
+  }
+};
 
-  setLastMessageTime: (time) => set({ lastMessageTime: time }),
+export const applyRepCompleted =
+  (side: 'left' | 'right'): AppThunk =>
+  (dispatch, getState) => {
+    dispatch(startTimer());
+    if (side === 'right') dispatch(incrementRight());
+    else dispatch(incrementLeft());
 
-  setExercises: (exs) => set({ exercises: exs }),
+    if (getState().machine.isResting) {
+      dispatch(completeSetOrRest());
+    }
 
-  addSetToHistory: (sr) => set((s) => ({ history: [...s.history, sr] })),
-  addRestToHistory: () =>
-    set((s) => ({
-      history: [
-        ...s.history,
-        {
-          setNumber: 0,
-          duration: s.activeTime,
-          exerciseName: 'Rest',
-          reps: 0,
+    dispatch(setLastMovementTime(Date.now()));
+  };
+
+export const setSelectedExercise =
+  (exercise: Exercise): AppThunk =>
+  (dispatch, getState) => {
+    const state = getState().machine;
+
+    if (!state.isResting && state.reps > 0) {
+      const exerciseName = state.selectedExercise?.name || 'Unknown';
+      const nextSetNumber =
+        countSetsForExercise(
+          state.history,
+          exerciseName,
+          state.selectedUser?.name
+        ) + 1;
+
+      dispatch(
+        addSetToHistory({
+          setNumber: nextSetNumber,
+          reps: state.reps,
+          duration: state.activeTime,
           timestamp: Date.now(),
-        },
-      ],
-    })),
-  clearHistory: () => set({ history: [] }),
+          exerciseName: exerciseName,
+          userName: state.selectedUser?.name,
+        })
+      );
+      dispatch(stopTimer());
+      dispatch(
+        mergeState({
+          sets: nextSetNumber,
+          reps: 0,
+          repsLeft: 0,
+          repsRight: 0,
+          activeTime: 0,
+          sliderThreshold: exercise.thresholdPercentage,
+          selectedExercise: exercise,
+          isAlternating: exercise.type === 'alternating',
+        })
+      );
+      return;
+    }
 
-  completeSetOrRest: () => {
-    const {
-      reps,
-      activeTime,
-      sets,
-      selectedExercise,
-      addSetToHistory,
-      addRestToHistory,
-      isResting,
-      lastMovementTime,
-      selectedUser,
-    } = get();
+    const currentSetCount = countSetsForExercise(
+      state.history,
+      exercise.name,
+      state.selectedUser?.name
+    );
+    dispatch(setSelectedExerciseState(exercise));
+    dispatch(mergeState({ sets: currentSetCount }));
+  };
 
-    if (!isResting) {
+export const completeSetOrRest = (): AppThunk => (dispatch, getState) => {
+  const state = getState().machine;
+
+  if (!state.isResting) {
+    const exerciseName = state.selectedExercise?.name || 'Unknown';
+    const nextSetNumber =
+      countSetsForExercise(
+        state.history,
+        exerciseName,
+        state.selectedUser?.name
+      ) + 1;
+
+    dispatch(
       addSetToHistory({
-        setNumber: sets + 1,
-        reps: reps,
-        duration: activeTime,
+        setNumber: nextSetNumber,
+        reps: state.reps,
+        duration: state.activeTime,
         timestamp: Date.now(),
-        exerciseName: selectedExercise?.name || 'Unknown',
-        userName: selectedUser?.name,
-      });
+        exerciseName: exerciseName,
+        userName: state.selectedUser?.name,
+      })
+    );
 
-      const timeSinceLastMove = (Date.now() - lastMovementTime) / 1000;
+    const timeSinceLastMove = (Date.now() - state.lastMovementTime) / 1000;
 
-      set({
-        sets: sets + 1,
+    dispatch(
+      mergeState({
+        sets: nextSetNumber,
         repsLeft: 0,
         repsRight: 0,
         reps: 0,
         isResting: true,
         activeTime: timeSinceLastMove,
-      });
-    } else {
-      addRestToHistory();
-      set({
-        isResting: false,
-        activeTime: 0,
-      });
-    }
-  },
+      })
+    );
+    return;
+  }
 
-  reset: () => {
-    get().stopTimer();
-    set({
+  dispatch(
+    addSetToHistory({
+      setNumber: 0,
+      duration: state.activeTime,
+      exerciseName: 'Rest',
+      reps: 0,
+      timestamp: Date.now(),
+      userName: state.selectedUser?.name,
+    })
+  );
+  dispatch(
+    mergeState({
+      isResting: false,
+      activeTime: 0,
+    })
+  );
+};
+
+export const reset = (): AppThunk => (dispatch) => {
+  dispatch(stopTimer());
+  dispatch(
+    mergeState({
       sets: 0,
       repsLeft: 0,
       repsRight: 0,
       reps: 0,
       activeTime: 0,
       isResting: false,
-    });
-  },
-});
-
-export const useStore = create<MachineStore>()(
-  subscribeWithSelector(storeCreator)
-);
+    })
+  );
+};

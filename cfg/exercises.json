@@ -1,14 +1,58 @@
 {
+  "categories": [
+    {
+      "id": "1",
+      "name": "Uncategorized"
+    },
+    {
+      "id": "2",
+      "name": "Push"
+    },
+    {
+      "id": "3",
+      "name": "Pull"
+    },
+    {
+      "id": "4",
+      "name": "Legs"
+    }
+  ],
   "exercises": [
     {
       "name": "Lat Pulldown",
       "thresholdPercentage": 70,
-      "type": "singular"
+      "type": "singular",
+      "categoryId": "3"
     },
     {
       "name": "Chest Fly",
       "thresholdPercentage": 65,
-      "type": "alternating"
+      "type": "alternating",
+      "categoryId": "2"
+    },
+    {
+      "name": "Triceps Pushdown",
+      "thresholdPercentage": 75,
+      "type": "singular",
+      "categoryId": "2"
+    },
+    {
+      "name": "Bicep Curl",
+      "thresholdPercentage": 60,
+      "type": "alternating",
+      "categoryId": "3"
+    },
+    {
+      "name": "Row",
+      "thresholdPercentage": 70,
+      "type": "singular",
+      "categoryId": "3"
+    },
+    {
+      "name": "Glute Kickback",
+      "thresholdPercentage": 65,
+      "type": "singular",
+      "categoryId": "4"
     }
   ]
 }

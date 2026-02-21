@@ -1,6 +1,6 @@
 import { Clock, Repeat, Timer } from 'lucide-react';
 import { SetRecord } from '../models';
-import { useStore } from '../store';
+import { useAppSelector } from '../store';
 
 interface SetCardProps {
   record: SetRecord;
@@ -8,7 +8,7 @@ interface SetCardProps {
 }
 
 export default function SetCard({ record, formatTime }: SetCardProps) {
-  const isDarkMode = useStore((s) => s.config.theme === 'dark');
+  const isDarkMode = useAppSelector((s) => s.machine.config.theme === 'dark');
 
   const cardColor = isDarkMode ? 'bg-gray-800' : 'bg-white';
   const textColor = isDarkMode ? 'text-gray-400' : 'text-gray-600';
@@ -54,8 +54,8 @@ export function LiveRestCard({
 }: {
   formatTime: (s: number) => string;
 }) {
-  const isDarkMode = useStore((s) => s.config.theme === 'dark');
-  const activeTime = useStore((s) => s.activeTime);
+  const isDarkMode = useAppSelector((s) => s.machine.config.theme === 'dark');
+  const activeTime = useAppSelector((s) => s.machine.activeTime);
 
   const cardColor = isDarkMode ? 'bg-gray-800' : 'bg-white';
   const textColor = isDarkMode ? 'text-gray-400' : 'text-gray-600';

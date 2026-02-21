@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { X, User } from 'lucide-react';
-import { useStore } from '../store';
-import { useShallow } from 'zustand/react/shallow';
+import { useAppSelector } from '../store';
 
 interface AddUserModalProps {
   isOpen: boolean;
@@ -28,11 +27,7 @@ export default function AddUserModal({
   const [name, setName] = useState('');
   const [selectedColor, setSelectedColor] = useState(COLOR_OPTIONS[0]);
 
-  const { isDarkMode } = useStore(
-    useShallow((s) => ({
-      isDarkMode: s.config.theme === 'dark',
-    }))
-  );
+  const isDarkMode = useAppSelector((s) => s.machine.config.theme === 'dark');
 
   if (!isOpen) return null;
 

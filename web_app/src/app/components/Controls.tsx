@@ -1,14 +1,19 @@
-import { useStore } from '../store';
-import { useShallow } from 'zustand/react/shallow';
+import { shallowEqual } from 'react-redux';
+import {
+  completeSetOrRest,
+  reset,
+  useAppDispatch,
+  useAppSelector,
+} from '../store';
 
 export default function Controls() {
-  const { isDarkMode, hasReps, reset, completeSet } = useStore(
-    useShallow((s) => ({
-      isDarkMode: s.config.theme === 'dark',
-      hasReps: s.reps > 0,
-      reset: s.reset,
-      completeSet: s.completeSetOrRest,
-    }))
+  const dispatch = useAppDispatch();
+  const { isDarkMode, hasReps } = useAppSelector(
+    (s) => ({
+      isDarkMode: s.machine.config.theme === 'dark',
+      hasReps: s.machine.reps > 0,
+    }),
+    shallowEqual
   );
 
   const buttonBaseClass =
@@ -29,7 +34,7 @@ export default function Controls() {
   return (
     <div className="flex flex-col gap-3">
       <button
-        onClick={completeSet}
+        onClick={() => dispatch(completeSetOrRest())}
         disabled={!hasReps}
         className={`${buttonBaseClass} ${hasReps ? primaryEnabled : primaryDisabled} backdrop-blur-[4px]`}
       >
@@ -37,7 +42,7 @@ export default function Controls() {
       </button>
 
       <button
-        onClick={reset}
+        onClick={() => dispatch(reset())}
         className={`${buttonBaseClass} ${secondaryButton} cursor-pointer`}
       >
         Reset All

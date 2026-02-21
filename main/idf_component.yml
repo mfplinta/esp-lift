@@ -16,3 +16,6 @@ dependencies:
   #   public: true
   joltwallet/littlefs: '*'
   espressif/cjson: '*'
+  bexcran/esp32-uuid:
+    git: https://github.com/bexcran/esp32-uuid
+    version: fix-random-bootloader

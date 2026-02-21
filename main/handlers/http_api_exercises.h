@@ -6,6 +6,8 @@
 #include <cJSON.h>
 #include <esp_http_server.h>
 #include <esp_log.h>
+#include <stdbool.h>
+#include <uuid.h>
 
 esp_err_t get_exercises_handler(httpd_req_t *req);
 esp_err_t post_exercises_handler(httpd_req_t *req);
@@ -74,6 +76,8 @@ esp_err_t post_exercises_handler(httpd_req_t *req) {
   cJSON *name = cJSON_GetObjectItemCaseSensitive(req_json, "name");
   cJSON *threshold = cJSON_GetObjectItemCaseSensitive(req_json, "thresholdPercentage");
   cJSON *type = cJSON_GetObjectItemCaseSensitive(req_json, "type");
+  cJSON *category_id = cJSON_GetObjectItemCaseSensitive(req_json, "categoryId");
+  cJSON *category_name = cJSON_GetObjectItemCaseSensitive(req_json, "categoryName");
 
   if (!cJSON_IsString(name) || !cJSON_IsNumber(threshold) || !cJSON_IsString(type)) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing or invalid fields");
@@ -86,8 +90,44 @@ esp_err_t post_exercises_handler(httpd_req_t *req) {
     goto cleanup;
   }
 
+  char category_id_value[UUID_STR_LEN] = {0};
+  const char *category_name_value =
+    cJSON_IsString(category_name) ? category_name->valuestring : NULL;
+  const char *category_id_raw =
+    cJSON_IsString(category_id) ? category_id->valuestring : NULL;
+  bool has_category =
+    (category_name_value && strlen(category_name_value) > 0) ||
+    (category_id_raw && strlen(category_id_raw) > 0);
+  const char *category_id_value_ptr = NULL;
+
+  if (has_category) {
+    if (categories_get_or_create_id(exercises_json,
+                                    category_name_value,
+                                    category_id_raw,
+                                    category_id_value,
+                                    sizeof(category_id_value))) {
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to assign category");
+      goto cleanup;
+    }
+    category_id_value_ptr = category_id_value;
+  } else if (!exercises_has_name(exercises_json, name->valuestring)) {
+    if (categories_get_or_create_id(exercises_json,
+                                    "General",
+                                    NULL,
+                                    category_id_value,
+                                    sizeof(category_id_value))) {
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to assign category");
+      goto cleanup;
+    }
+    category_id_value_ptr = category_id_value;
+  }
+
   /* Add exercise */
-  if (exercises_add(exercises_json, name->valuestring, threshold->valuedouble, exercise_type)) {
+  if (exercises_add(exercises_json,
+                    name->valuestring,
+                    threshold->valuedouble,
+                    exercise_type,
+                    category_id_value_ptr)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to add exercise");
     goto cleanup;
   }

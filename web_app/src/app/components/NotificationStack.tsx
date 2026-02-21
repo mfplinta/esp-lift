@@ -14,7 +14,7 @@ import {
   AlertTriangle,
   Circle,
 } from 'lucide-react';
-import { useStore } from '../store';
+import { useAppSelector } from '../store';
 
 export interface NotificationConfig {
   id: string;
@@ -91,7 +91,7 @@ const NotificationStack = forwardRef<
     new Map()
   );
 
-  const isDarkMode = useStore((s) => s.config.theme === 'dark');
+  const isDarkMode = useAppSelector((s) => s.machine.config.theme === 'dark');
 
   const dismiss = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));

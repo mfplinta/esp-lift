@@ -16,6 +16,13 @@ export interface Exercise {
   name: string;
   thresholdPercentage: number;
   type: 'singular' | 'alternating';
+  categoryId?: string;
+  categoryName?: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
 }
 
 export interface AppConfig {

@@ -1,15 +1,16 @@
 import MachineSlider from './MachineSlider';
-import { useStore } from '../store';
-import { useShallow } from 'zustand/react/shallow';
+import { shallowEqual } from 'react-redux';
+import { useAppSelector } from '../store';
 
 export default function MachineVisualizer() {
-  const { repsLeft, repsRight, isDarkMode, isAlternating } = useStore(
-    useShallow((s) => ({
-      repsLeft: s.repsLeft,
-      repsRight: s.repsRight,
-      isDarkMode: s.config.theme === 'dark',
-      isAlternating: s.isAlternating,
-    }))
+  const { repsLeft, repsRight, isDarkMode, isAlternating } = useAppSelector(
+    (s) => ({
+      repsLeft: s.machine.repsLeft,
+      repsRight: s.machine.repsRight,
+      isDarkMode: s.machine.config.theme === 'dark',
+      isAlternating: s.machine.isAlternating,
+    }),
+    shallowEqual
   );
 
   return (
