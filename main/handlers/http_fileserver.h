@@ -5,6 +5,8 @@
 #include <esp_http_server.h>
 #include <stdint.h>
 
+#include "../utils.h"
+
 #define SCRATCH_BUFSIZE 8192
 
 esp_err_t path_handler(httpd_req_t *req);
@@ -29,6 +31,7 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filena
 
 esp_err_t path_handler(httpd_req_t *req) {
   esp_err_t ret = ESP_FAIL;
+  httpd_log_request(req, "HTTP_FILESERVER");
   const char *base_path = (const char *) req->user_ctx;
   char filepath[600];
 

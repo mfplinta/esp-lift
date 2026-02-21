@@ -5,6 +5,8 @@
 #include <esp_system.h>
 #include <esp_http_server.h>
 
+#include "../utils.h"
+
 esp_err_t restart_handler(httpd_req_t *req);
 
 void http_api_hardware_register(httpd_handle_t server) {
@@ -15,6 +17,7 @@ void http_api_hardware_register(httpd_handle_t server) {
 }
 
 esp_err_t restart_handler(httpd_req_t *req) {
+  httpd_log_request(req, "HTTP_API_HARDWARE");
   httpd_resp_send(req, "Restarting device...\n", HTTPD_RESP_USE_STRLEN);
 
   ESP_LOGI("HTTP_API_HARDWARE", "ESP restarting now...");

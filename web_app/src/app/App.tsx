@@ -24,8 +24,10 @@ const MSG_WEBSOCKET_CONNECTED = 'Connected';
 const MSG_WEBSOCKET_ERROR = 'Error connecting to device';
 const MSG_WEBSOCKET_DISCONNECTED = 'Disconnected. Reconnecting...';
 const HANDSHAKE_INTERVAL_MS = 15000;
+const WAKELOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
 const host = window.location.href.split('/')[2];
+const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 
 export default function App() {
   const [showConfig, setShowConfig] = useState(false);
@@ -41,6 +43,9 @@ export default function App() {
   // Refs
   const notificationRef = useRef<NotificationHandle>(null);
   const handshakeExpiredRef = useRef(false);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const wakeLockTimerRef = useRef<number | null>(null);
+  const lastMovementAtRef = useRef<number | null>(null);
 
   const {
     config,
@@ -81,6 +86,59 @@ export default function App() {
     notificationRef.current?.addNotification({ message: msg, ...opt });
   const dismissNotification = (msg: string) =>
     notificationRef.current?.dismissByMessage(msg);
+
+  const releaseWakeLock = useCallback(async () => {
+    if (wakeLockTimerRef.current) {
+      window.clearTimeout(wakeLockTimerRef.current);
+      wakeLockTimerRef.current = null;
+    }
+
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+      } catch (e) {
+        // no-op
+      } finally {
+        wakeLockRef.current = null;
+      }
+    }
+  }, []);
+
+  const requestWakeLock = useCallback(async () => {
+    if (!('wakeLock' in navigator)) return;
+    if (document.visibilityState !== 'visible') return;
+
+    if (!wakeLockRef.current) {
+      try {
+        wakeLockRef.current = await (
+          navigator as Navigator & {
+            wakeLock?: {
+              request: (type: 'screen') => Promise<WakeLockSentinel>;
+            };
+          }
+        ).wakeLock?.request('screen');
+
+        wakeLockRef.current?.addEventListener('release', () => {
+          wakeLockRef.current = null;
+        });
+      } catch (e) {
+        console.warn('Failed to acquire wake lock', e);
+      }
+    }
+  }, []);
+
+  const bumpWakeLock = useCallback(async () => {
+    lastMovementAtRef.current = Date.now();
+    await requestWakeLock();
+
+    if (wakeLockTimerRef.current) {
+      window.clearTimeout(wakeLockTimerRef.current);
+    }
+
+    wakeLockTimerRef.current = window.setTimeout(() => {
+      releaseWakeLock();
+    }, WAKELOCK_TIMEOUT_MS);
+  }, [releaseWakeLock, requestWakeLock]);
 
   // --- API exercises ---
   const fetchExercises = async () => {
@@ -179,7 +237,7 @@ export default function App() {
 
   // --- WebSocket ---
   const { readyState, sendMessage } = useWebSocket({
-    url: `ws://${host}/ws`,
+    url: `${wsProtocol}://${host}/ws`,
     connect: wsEnabled,
     shouldReconnect: true,
     retryOnError: true,
@@ -220,6 +278,7 @@ export default function App() {
 
       const eventType = data.event ?? 'position';
       if (eventType === 'rep') {
+        bumpWakeLock();
         if (data.name === 'right' || data.name === 'left') {
           applyRepCompleted(data.name);
         }
@@ -227,6 +286,7 @@ export default function App() {
       }
 
       if (eventType === 'position') {
+        bumpWakeLock();
         const calibrated = Math.min(Math.max(0, data.calibrated ?? 0), 100);
 
         if (data.name === 'right') setSliderPositionRight(calibrated);
@@ -289,6 +349,28 @@ export default function App() {
       if (timer) window.clearInterval(timer);
     };
   }, [readyState, lastMessageTime, setLastMessageTime]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      const lastMovement = lastMovementAtRef.current;
+      if (document.visibilityState === 'visible' && lastMovement) {
+        const elapsed = Date.now() - lastMovement;
+        if (elapsed < WAKELOCK_TIMEOUT_MS) {
+          requestWakeLock();
+          return;
+        }
+      }
+
+      releaseWakeLock();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      releaseWakeLock();
+    };
+  }, [releaseWakeLock, requestWakeLock]);
 
   const sendThresholds = useCallback(
     (value: number) => {

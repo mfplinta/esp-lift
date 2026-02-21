@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "../utils.h"
+
 typedef struct {
   httpd_handle_t hd;
   char *data;
@@ -25,6 +27,7 @@ static size_t ws_subscriber_count = 0;
 static httpd_handle_t ws_server_handle = NULL;
 
 #define WS_HANDSHAKE_INTERVAL_MS 10000
+#define WS_HANDSHAKE_TASK_STACK 4096
 
 static esp_err_t ws_handler(httpd_req_t *req);
 void ws_send_message(resp_arg_t* resp_arg);
@@ -55,7 +58,8 @@ void ws_register(httpd_handle_t server) {
     static bool handshake_started = false;
     if (!handshake_started) {
       handshake_started = true;
-      xTaskCreate(ws_handshake_broadcast_task, "ws_handshake_broadcast", 2048, NULL, 5, NULL);
+      xTaskCreate(ws_handshake_broadcast_task, "ws_handshake_broadcast", WS_HANDSHAKE_TASK_STACK,
+          NULL, 5, NULL);
     }
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/ws",
                                                                      .method = HTTP_GET,
@@ -114,6 +118,7 @@ void ws_send_message(resp_arg_t* resp_arg) {
 }
 
 esp_err_t ws_handler(httpd_req_t *req) {
+  httpd_log_request(req, "WS");
   if (req->method == HTTP_GET) {
     ESP_LOGI("WS", "New client connected.");
     return ESP_OK;

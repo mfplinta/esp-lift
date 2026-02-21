@@ -5,6 +5,7 @@
 #include <driver/uart_vfs.h>
 #include <esp_attr.h>
 #include <esp_http_server.h>
+#include <esp_https_server.h>
 #include <esp_littlefs.h>
 #include <esp_log.h>
 #include <esp_system.h>
@@ -17,6 +18,7 @@
 #include <portmacro.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -28,8 +30,10 @@
 #include "handlers/http_api_settings.h"
 #include "handlers/http_captiveportalredirect.h"
 #include "handlers/http_fileserver.h"
+#include "handlers/http_redirect.h"
 #include "handlers/ws.h"
 #include "rep_counter.h"
+#include "tls_cert.h"
 #include "utils.h"
 #include "wifi.h"
 
@@ -43,12 +47,93 @@ const char *TAG = "MAIN";
 static const char *const cal_state_names[] = {
   [CAL_IDLE] = "idle", [CAL_SEEK_MAX] = "seek_max", [CAL_DONE] = "done"};
 
+static esp_err_t calibrate_handler(httpd_req_t *req);
+static void restart_https_server(void);
+
 httpd_handle_t server = NULL;
+static httpd_handle_t redirect_server = NULL;
+static tls_cert_bundle_t https_bundle = {0};
 encoder_t *leftEncoder = NULL;
 encoder_t *rightEncoder = NULL;
 static rep_counter_t rep_counter;
 static int32_t last_left_calibrated_sent = -1;
 static int32_t last_right_calibrated_sent = -1;
+
+#define TLS_CERT_TASK_STACK 8192
+
+typedef struct {
+  char ap_ip[16];
+  char sta_ip[16];
+  TaskHandle_t notify_task;
+  esp_err_t result;
+} tls_cert_task_args_t;
+
+typedef struct {
+  char ap_ip[16];
+  char sta_ip[16];
+} tls_update_args_t;
+
+static TaskHandle_t tls_update_task_handle = NULL;
+
+static void tls_cert_task(void *param) {
+  tls_cert_task_args_t *args = (tls_cert_task_args_t *) param;
+  const char *ap_ip = args->ap_ip[0] ? args->ap_ip : NULL;
+  const char *sta_ip = args->sta_ip[0] ? args->sta_ip : NULL;
+
+  tls_cert_free(&https_bundle);
+  args->result = tls_cert_ensure(ap_ip, sta_ip, &https_bundle);
+
+  xTaskNotifyGive(args->notify_task);
+  vTaskDelete(NULL);
+}
+
+static void tls_update_task(void *param) {
+  tls_update_args_t *args = (tls_update_args_t *) param;
+  const char *ap_ip = args->ap_ip[0] ? args->ap_ip : NULL;
+  const char *sta_ip = args->sta_ip[0] ? args->sta_ip : NULL;
+
+  esp_err_t err = tls_cert_regenerate(ap_ip, sta_ip);
+
+  if (err == ESP_OK) {
+    restart_https_server();
+  } else {
+    ESP_LOGE(TAG, "TLS cert regeneration failed");
+  }
+
+  tls_update_task_handle = NULL;
+  free(args);
+  vTaskDelete(NULL);
+}
+
+static void request_tls_update(const char *ap_ip, const char *sta_ip) {
+  if (tls_update_task_handle) {
+    ESP_LOGW(TAG, "TLS update already running");
+    return;
+  }
+
+  tls_update_args_t *args = calloc(1, sizeof(tls_update_args_t));
+  if (!args) {
+    ESP_LOGE(TAG, "Failed to allocate TLS update args");
+    return;
+  }
+
+  if (ap_ip) {
+    strncpy(args->ap_ip, ap_ip, sizeof(args->ap_ip));
+    args->ap_ip[sizeof(args->ap_ip) - 1] = '\0';
+  }
+  if (sta_ip) {
+    strncpy(args->sta_ip, sta_ip, sizeof(args->sta_ip));
+    args->sta_ip[sizeof(args->sta_ip) - 1] = '\0';
+  }
+
+  BaseType_t created = xTaskCreate(tls_update_task, "tls_update", TLS_CERT_TASK_STACK, args,
+                                   tskIDLE_PRIORITY + 1, &tls_update_task_handle);
+  if (created != pdPASS) {
+    tls_update_task_handle = NULL;
+    free(args);
+    ESP_LOGE(TAG, "Failed to create TLS update task");
+  }
+}
 
 static void ws_send_encoder_event(const char *event_type, const char *encoder_name,
                                   encoder_t *encoder, const char *cal_state_name) {
@@ -92,6 +177,126 @@ static void ws_send_encoder_event(const char *event_type, const char *encoder_na
   ws_send_message(resp_arg);
 }
 
+static const char *redirect_fallback_target(void *ctx) {
+  (void) ctx;
+  const char *hostname = tls_cert_get_hostname();
+  return (hostname && hostname[0]) ? hostname : wifi_get_ap_ip();
+}
+
+static void register_http_handlers(httpd_handle_t http_server) {
+  http_api_hardware_register(http_server);
+  http_api_exercises_register(http_server, "/cfg/exercises.json");
+  http_api_settings_register(http_server, "/cfg/settings.json");
+  http_captiveportalredirect_register(http_server);
+  ws_register(http_server);
+
+  ESP_ERROR_CHECK(
+    httpd_register_uri_handler(http_server, &(httpd_uri_t) {.uri = "/api/calibrate",
+                                                            .method = HTTP_GET,
+                                                            .handler = calibrate_handler,
+                                                            .user_ctx = NULL}));
+
+  http_fileserver_register(http_server, "/www");
+}
+
+static esp_err_t start_https_server(void) {
+  tls_cert_task_args_t *args = calloc(1, sizeof(tls_cert_task_args_t));
+  if (!args) {
+    ESP_LOGE(TAG, "Failed to allocate TLS cert task args");
+    return ESP_ERR_NO_MEM;
+  }
+
+  const char *ap_ip = wifi_get_ap_ip();
+  const char *sta_ip = wifi_get_sta_ip();
+  if (ap_ip) {
+    strncpy(args->ap_ip, ap_ip, sizeof(args->ap_ip));
+    args->ap_ip[sizeof(args->ap_ip) - 1] = '\0';
+  }
+  if (sta_ip) {
+    strncpy(args->sta_ip, sta_ip, sizeof(args->sta_ip));
+    args->sta_ip[sizeof(args->sta_ip) - 1] = '\0';
+  }
+
+  args->notify_task = xTaskGetCurrentTaskHandle();
+
+  BaseType_t created =
+    xTaskCreate(tls_cert_task, "tls_cert", TLS_CERT_TASK_STACK, args, tskIDLE_PRIORITY + 1, NULL);
+  if (created != pdPASS) {
+    free(args);
+    ESP_LOGE(TAG, "Failed to create TLS cert task");
+    return ESP_FAIL;
+  }
+
+  ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+  esp_err_t err = args->result;
+  free(args);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to load HTTPS certificate");
+    return err;
+  }
+
+  httpd_ssl_config_t config = HTTPD_SSL_CONFIG_DEFAULT();
+  config.httpd.uri_match_fn = httpd_uri_match_wildcard;
+  config.httpd.lru_purge_enable = true;
+  config.httpd.keep_alive_enable = true;
+  config.httpd.max_uri_handlers = get_captive_paths_count() + 9;
+  config.httpd.server_port = 443;
+  config.servercert = (const unsigned char *) https_bundle.cert_pem;
+  config.servercert_len = https_bundle.cert_len;
+  config.prvtkey_pem = (const unsigned char *) https_bundle.key_pem;
+  config.prvtkey_len = https_bundle.key_len;
+
+  err = httpd_ssl_start(&server, &config);
+  if (err != ESP_OK) return err;
+
+  register_http_handlers(server);
+  return ESP_OK;
+}
+
+static esp_err_t start_http_redirect_server(void) {
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.uri_match_fn = httpd_uri_match_wildcard;
+  config.lru_purge_enable = true;
+  config.keep_alive_enable = true;
+  config.max_uri_handlers = 4;
+  config.server_port = 80;
+
+  esp_err_t err = httpd_start(&redirect_server, &config);
+  if (err != ESP_OK) return err;
+
+  static http_redirect_config_t redirect_config = {.target_fn = redirect_fallback_target,
+                                                   .target_ctx = NULL,
+                                                   .fallback_target = NULL,
+                                                   .log_tag = "HTTP_REDIRECT",
+                                                   .path = "/*",
+                                                   .status_code = 301};
+
+  ESP_ERROR_CHECK(http_redirect_register(redirect_server, &redirect_config));
+
+  return ESP_OK;
+}
+
+static void restart_https_server(void) {
+  if (server) {
+    httpd_ssl_stop(server);
+    server = NULL;
+  }
+  if (start_https_server() != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to restart HTTPS server");
+  }
+}
+
+static void handle_sta_ip_change(const char *new_ip) {
+  if (!new_ip || new_ip[0] == '\0') return;
+  request_tls_update(wifi_get_ap_ip(), new_ip);
+}
+
+void app_hostname_changed(const char *hostname) {
+  tls_cert_set_hostname(hostname);
+  request_tls_update(wifi_get_ap_ip(), wifi_get_sta_ip());
+}
+
 static void encoder_event_handler(encoder_event_t *event) {
   char *encoder_name;
   rep_side_t side;
@@ -122,6 +327,7 @@ static void encoder_event_handler(encoder_event_t *event) {
 }
 
 esp_err_t calibrate_handler(httpd_req_t *req) {
+  httpd_log_request(req, "HTTP_API_HARDWARE");
   if (leftEncoder == NULL || rightEncoder == NULL) httpd_resp_send_err(req, 400, "");
   encoder_reset_calibration(leftEncoder);
   encoder_reset_calibration(rightEncoder);
@@ -287,6 +493,8 @@ void app_main(void) {
   wifi_config.sta.pmf_cfg.required = false;
 
   init_wifi(&wifi_config, settings.hostname);
+  wifi_set_sta_ip_change_cb(handle_sta_ip_change);
+  tls_cert_set_hostname(settings.hostname);
 
   /* Encoders */
   leftEncoder = init_encoder(
@@ -307,28 +515,9 @@ void app_main(void) {
   rep_counter_init(&rep_counter);
   ws_subscribe_message(rep_counter_handle_ws_message, &rep_counter);
 
-  /* HTTP Server */
-  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-
-  config.uri_match_fn = httpd_uri_match_wildcard;
-  config.lru_purge_enable = true;
-  config.keep_alive_enable = true;
-  config.max_uri_handlers = get_captive_paths_count() + 9;
-
-  ESP_ERROR_CHECK(httpd_start(&server, &config));
-  http_api_hardware_register(server);
-  http_api_exercises_register(server, "/cfg/exercises.json");
-  http_api_settings_register(server, "/cfg/settings.json");
-  http_captiveportalredirect_register(server);
-  ws_register(server);
-
-  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &(httpd_uri_t) {.uri = "/api/calibrate",
-                                                                     .method = HTTP_GET,
-                                                                     .handler = calibrate_handler,
-                                                                     .user_ctx = NULL}));
-
-  // Wildcard
-  http_fileserver_register(server, "/www");
+  /* HTTP(S) Server */
+  ESP_ERROR_CHECK(start_https_server());
+  ESP_ERROR_CHECK(start_http_redirect_server());
 
   /* Run tasks */
   xTaskCreate(input_task, "input_task", 4096, NULL, tskIDLE_PRIORITY, NULL);

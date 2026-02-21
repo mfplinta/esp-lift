@@ -7,11 +7,36 @@
 #include <esp_netif.h>
 #include <esp_wifi.h>
 #include <nvs_flash.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "dns_server.h"
 
 static const char *TAG_WIFI = "WIFI";
 esp_netif_t *ap_netif = NULL;
+
+typedef void (*wifi_sta_ip_change_cb_t)(const char *new_ip);
+
+static char g_ap_ip[16] = "";
+static char g_sta_ip[16] = "";
+static bool g_sta_ip_valid = false;
+static wifi_sta_ip_change_cb_t g_sta_ip_cb = NULL;
+
+static inline void wifi_set_sta_ip_change_cb(wifi_sta_ip_change_cb_t cb) { g_sta_ip_cb = cb; }
+
+static inline const char *wifi_get_ap_ip(void) {
+  if (g_ap_ip[0] == '\0' && ap_netif) {
+    esp_netif_ip_info_t ip;
+    if (esp_netif_get_ip_info(ap_netif, &ip) == ESP_OK) {
+      snprintf(g_ap_ip, sizeof(g_ap_ip), IPSTR, IP2STR(&ip.ip));
+    }
+  }
+  return g_ap_ip[0] ? g_ap_ip : "192.168.4.1";
+}
+
+static inline const char *wifi_get_sta_ip(void) { return g_sta_ip_valid ? g_sta_ip : ""; }
+static inline bool wifi_has_sta_ip(void) { return g_sta_ip_valid; }
 
 /* ---------- AP defaults ---------- */
 #define WIFI_AP_SSID "ESP-LIFT"
@@ -40,6 +65,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
       ESP_LOGI(TAG_WIFI, "AP started");
       esp_netif_ip_info_t ip;
       esp_netif_get_ip_info(ap_netif, &ip);
+      snprintf(g_ap_ip, sizeof(g_ap_ip), IPSTR, IP2STR(&ip.ip));
       captive_dns_start(ip.ip.addr);
       ESP_LOGI(TAG_WIFI, "Captive DNS started");
       break;
@@ -64,7 +90,17 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
   if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = event_data;
-    ESP_LOGI(TAG_WIFI, "STA IP acquired: " IPSTR, IP2STR(&event->ip_info.ip));
+    char new_ip[16];
+    snprintf(new_ip, sizeof(new_ip), IPSTR, IP2STR(&event->ip_info.ip));
+    ESP_LOGI(TAG_WIFI, "STA IP acquired: %s", new_ip);
+    if (strcmp(new_ip, g_sta_ip) != 0) {
+      strncpy(g_sta_ip, new_ip, sizeof(g_sta_ip));
+      g_sta_ip[sizeof(g_sta_ip) - 1] = '\0';
+      g_sta_ip_valid = true;
+      if (g_sta_ip_cb) {
+        g_sta_ip_cb(g_sta_ip);
+      }
+    }
   }
 }
 

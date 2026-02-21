@@ -5,7 +5,7 @@
     "hostname": "esp-lift.arpa"
   },
   "movement": {
-    "debounceInterval": 100,
-    "calibrationDebounceSteps": 25
+    "debounceInterval": 125,
+    "calibrationDebounceSteps": 360
   }
 }
