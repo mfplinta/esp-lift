@@ -1,84 +1,121 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { shallowEqual } from 'react-redux';
-import { setSliderThreshold, useAppDispatch, useAppSelector } from '../store';
+import {
+  setSliderThreshold,
+  setSliderRepBand,
+  useAppDispatch,
+  useAppSelector,
+} from '../store';
 
 interface MachineSliderProps {
   isLeftSlider: boolean;
 }
 
+type DragTarget = 'threshold' | 'repBand' | null;
+
 export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
   const [animate, setAnimate] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isNear, setIsNear] = useState(false);
-  const [dragThreshold, setDragThreshold] = useState<number | null>(null);
+  const [dragTarget, setDragTarget] = useState<DragTarget>(null);
+  const [nearTarget, setNearTarget] = useState<DragTarget>(null);
+  const [dragValue, setDragValue] = useState<number | null>(null);
 
   const innerRef = useRef<HTMLDivElement | null>(null);
-  const dragThresholdRef = useRef<number | null>(null);
+  const dragValueRef = useRef<number | null>(null);
 
   const dispatch = useAppDispatch();
-  const { sliderThreshold, reps, position, isDarkMode } = useAppSelector(
-    (s) => ({
-      sliderThreshold: s.machine.sliderThreshold,
-      reps: s.machine.isAlternating
-        ? isLeftSlider
-          ? s.machine.repsLeft
-          : s.machine.repsRight
-        : s.machine.reps,
-      position: s.machine.isAlternating
-        ? isLeftSlider
-          ? s.machine.sliderPositionLeft
-          : s.machine.sliderPositionRight
-        : s.machine.lastSliderPosition,
-      isDarkMode: s.machine.config.theme === 'dark',
-    }),
-    shallowEqual
-  );
+  const { sliderThreshold, sliderRepBand, reps, position, isDarkMode } =
+    useAppSelector(
+      (s) => ({
+        sliderThreshold: s.machine.sliderThreshold,
+        sliderRepBand: s.machine.sliderRepBand,
+        reps: s.machine.isAlternating
+          ? isLeftSlider
+            ? s.machine.repsLeft
+            : s.machine.repsRight
+          : s.machine.reps,
+        position: s.machine.isAlternating
+          ? isLeftSlider
+            ? s.machine.sliderPositionLeft
+            : s.machine.sliderPositionRight
+          : s.machine.lastSliderPosition,
+        isDarkMode: s.machine.config.theme === 'dark',
+      }),
+      shallowEqual
+    );
 
   const prevReps = useRef(reps);
 
-  const computeThreshold = useCallback((clientY: number) => {
+  const computePercent = useCallback((clientY: number) => {
     if (!innerRef.current) return null;
-
     const rect = innerRef.current.getBoundingClientRect();
     const relativeY = clientY - rect.top;
     const rawPercentage = (relativeY / rect.height) * 100;
     const invertedPercentage = 100 - rawPercentage;
-
     return Math.max(0, Math.min(100, invertedPercentage));
   }, []);
 
-  const updateNearState = useCallback(
-    (clientY: number, thresholdValue: number) => {
-      if (!innerRef.current) return;
+  const getHandleYPx = useCallback((percent: number) => {
+    if (!innerRef.current) return 0;
+    const rect = innerRef.current.getBoundingClientRect();
+    return rect.bottom - rect.height * (percent / 100);
+  }, []);
 
-      const rect = innerRef.current.getBoundingClientRect();
-      const thresholdBottomPx = rect.height * (thresholdValue / 100);
-      const thresholdCenterY = rect.bottom - thresholdBottomPx;
-      const dist = Math.abs(clientY - thresholdCenterY);
+  const proximityPx = 15;
+  const baseLinePx = 5;
+  const expandedLinePx = 20;
 
-      setIsNear(dist <= proximityPx);
+  const findNearestHandle = useCallback(
+    (clientY: number): DragTarget => {
+      if (!innerRef.current) return null;
+      const thresholdY = getHandleYPx(sliderThreshold);
+      const repBandPos = Math.max(0, sliderThreshold - sliderRepBand);
+      const repBandY = getHandleYPx(repBandPos);
+
+      const distThreshold = Math.abs(clientY - thresholdY);
+      const distRepBand = Math.abs(clientY - repBandY);
+
+      if (distThreshold <= proximityPx && distRepBand <= proximityPx) {
+        return distThreshold <= distRepBand ? 'threshold' : 'repBand';
+      }
+      if (distThreshold <= proximityPx) return 'threshold';
+      if (distRepBand <= proximityPx) return 'repBand';
+      return null;
     },
-    []
+    [sliderThreshold, sliderRepBand, getHandleYPx]
   );
 
+  // Drag lifecycle
   useEffect(() => {
-    if (!isDragging) return;
+    if (!dragTarget) return;
 
     const handlePointerMove = (e: PointerEvent) => {
-      const next = computeThreshold(e.clientY);
-      if (next === null) return;
-      dragThresholdRef.current = next;
-      setDragThreshold(next);
-      updateNearState(e.clientY, next);
+      const percent = computePercent(e.clientY);
+      if (percent === null) return;
+
+      let value: number;
+      if (dragTarget === 'threshold') {
+        value = percent;
+      } else {
+        // repBand handle dragged: compute repBand = threshold - pointer position
+        value = Math.max(0, Math.min(100, sliderThreshold - percent));
+      }
+
+      dragValueRef.current = value;
+      setDragValue(value);
     };
 
-    const handlePointerUp = (e: PointerEvent) => {
-      setIsDragging(false);
-      const finalValue =
-        dragThresholdRef.current ?? dragThreshold ?? sliderThreshold;
-      setDragThreshold(null);
-      dispatch(setSliderThreshold(finalValue));
-      updateNearState(e.clientY, finalValue);
+    const handlePointerUp = () => {
+      const finalValue = dragValueRef.current ?? dragValue;
+      if (finalValue !== null) {
+        if (dragTarget === 'threshold') {
+          dispatch(setSliderThreshold(finalValue));
+        } else {
+          dispatch(setSliderRepBand(finalValue));
+        }
+      }
+      setDragTarget(null);
+      setDragValue(null);
+      dragValueRef.current = null;
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -90,38 +127,47 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [
-    isDragging,
-    computeThreshold,
-    dragThreshold,
-    sliderThreshold,
-    setSliderThreshold,
-    updateNearState,
-  ]);
+  }, [dragTarget, computePercent, dragValue, sliderThreshold, dispatch]);
 
-  const proximityPx = 25;
-  const baseLinePx = 5;
-  const expandedLinePx = 20;
+  // Compute display values
   const displayThreshold =
-    isDragging && dragThreshold !== null ? dragThreshold : sliderThreshold;
+    dragTarget === 'threshold' && dragValue !== null
+      ? dragValue
+      : sliderThreshold;
+
+  const displayRepBand =
+    dragTarget === 'repBand' && dragValue !== null ? dragValue : sliderRepBand;
+
+  const repBandPosition = Math.max(0, displayThreshold - displayRepBand);
 
   const handleContainerPointerMove = (e: React.PointerEvent) => {
-    if (!innerRef.current) return;
-
-    updateNearState(e.clientY, displayThreshold);
+    if (dragTarget) return;
+    setNearTarget(findNearestHandle(e.clientY));
   };
 
-  const handleDragStart = (e: React.PointerEvent) => {
+  const handleContainerPointerLeave = () => {
+    if (!dragTarget) setNearTarget(null);
+  };
+
+  const startDrag = (target: DragTarget) => (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setIsDragging(true);
-    const next = computeThreshold(e.clientY);
-    if (next !== null) {
-      dragThresholdRef.current = next;
-      setDragThreshold(next);
-      updateNearState(e.clientY, next);
+    setDragTarget(target);
+    setNearTarget(target);
+
+    const percent = computePercent(e.clientY);
+    if (percent === null) return;
+
+    let value: number;
+    if (target === 'threshold') {
+      value = percent;
+    } else {
+      value = Math.max(0, Math.min(100, sliderThreshold - percent));
     }
+    dragValueRef.current = value;
+    setDragValue(value);
   };
 
+  // Flash animation on rep count
   useEffect(() => {
     if (reps !== prevReps.current && reps !== undefined && reps > 0) {
       setAnimate(true);
@@ -131,15 +177,24 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
     prevReps.current = reps;
   }, [reps]);
 
-  const active = isNear || isDragging;
-  const visibleLinePx = active ? expandedLinePx : baseLinePx;
-  const hitboxPx = visibleLinePx + proximityPx * 2;
+  // Handle visual states
+  const thresholdActive =
+    nearTarget === 'threshold' || dragTarget === 'threshold';
+  const repBandActive = nearTarget === 'repBand' || dragTarget === 'repBand';
 
+  const thresholdLinePx = thresholdActive ? expandedLinePx : baseLinePx;
+  const repBandLinePx = repBandActive ? expandedLinePx : baseLinePx;
+  const thresholdHitboxPx = thresholdLinePx + proximityPx * 2;
+  const repBandHitboxPx = repBandLinePx + proximityPx * 2;
+
+  // Colors
   const weightColor = isDarkMode
     ? 'bg-gradient-to-b from-gray-500 to-gray-600'
     : 'bg-gradient-to-b from-gray-400 to-gray-500';
   const thresholdColor = isDarkMode ? 'bg-green-500' : 'bg-green-600';
-  const dotColor = isDarkMode ? 'bg-green-300' : 'bg-green-800';
+  const thresholdDotColor = isDarkMode ? 'bg-green-300' : 'bg-green-800';
+  const repBandColor = isDarkMode ? 'bg-orange-500' : 'bg-orange-500';
+  const repBandDotColor = isDarkMode ? 'bg-orange-300' : 'bg-orange-800';
   const fillColor = isDarkMode
     ? 'bg-gradient-to-b from-lime-400 to-lime-500'
     : 'bg-gradient-to-b from-yellow-300 to-yellow-400';
@@ -149,7 +204,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
       ref={innerRef}
       className="relative h-full w-32 sm:w-40 rounded-3xl overflow-hidden select-none"
       onPointerMove={handleContainerPointerMove}
-      onMouseLeave={() => !isDragging && setIsNear(false)}
+      onMouseLeave={handleContainerPointerLeave}
       style={{ touchAction: 'none' }}
     >
       {/* 1. Weight Stack Background */}
@@ -177,32 +232,36 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
         style={{ height: `${position}%`, bottom: 0 }}
       />
 
-      {/* 4. Draggable Handle */}
+      {/* 4. Threshold Handle (green) */}
       <div
         className="absolute w-full cursor-grab active:cursor-grabbing z-30 flex items-center"
-        onPointerDown={handleDragStart}
+        onPointerDown={startDrag('threshold')}
         style={{
           bottom: `${displayThreshold}%`,
           transform: 'translateY(50%)',
-          height: `${hitboxPx}px`,
+          height: `${thresholdHitboxPx}px`,
           touchAction: 'none',
         }}
       >
         <div
           className={`${thresholdColor} shadow-lg rounded-full w-full relative pointer-events-none`}
           style={{
-            height: `${visibleLinePx}px`,
+            height: `${thresholdLinePx}px`,
             transition: 'height 160ms ease',
           }}
         >
           <div className="absolute inset-0 flex items-center justify-center gap-2">
             {[0, 1, 2].map((i) => (
-              <div key={i} className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+              <div
+                key={i}
+                className={`w-1.5 h-1.5 rounded-full ${thresholdDotColor}`}
+              />
             ))}
           </div>
         </div>
       </div>
 
+      {/* Threshold overflow wings */}
       <div
         className={`absolute ${thresholdColor} z-20 shadow-lg rounded-l-full pointer-events-none`}
         style={{
@@ -210,7 +269,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
           transform: 'translateY(50%)',
           left: '-60px',
           width: '60px',
-          height: `${visibleLinePx}px`,
+          height: `${thresholdLinePx}px`,
           transition: 'height 160ms ease',
         }}
       />
@@ -221,7 +280,60 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
           transform: 'translateY(50%)',
           right: '-60px',
           width: '60px',
-          height: `${visibleLinePx}px`,
+          height: `${thresholdLinePx}px`,
+          transition: 'height 160ms ease',
+        }}
+      />
+
+      {/* 5. Rep Band Handle (orange) */}
+      <div
+        className="absolute w-full cursor-grab active:cursor-grabbing z-30 flex items-center"
+        onPointerDown={startDrag('repBand')}
+        style={{
+          bottom: `${repBandPosition}%`,
+          transform: 'translateY(50%)',
+          height: `${repBandHitboxPx}px`,
+          touchAction: 'none',
+        }}
+      >
+        <div
+          className={`${repBandColor} shadow-lg rounded-full w-full relative pointer-events-none`}
+          style={{
+            height: `${repBandLinePx}px`,
+            transition: 'height 160ms ease',
+          }}
+        >
+          <div className="absolute inset-0 flex items-center justify-center gap-2">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className={`w-1.5 h-1.5 rounded-full ${repBandDotColor}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Rep Band overflow wings */}
+      <div
+        className={`absolute ${repBandColor} z-20 shadow-lg rounded-l-full pointer-events-none`}
+        style={{
+          bottom: `${repBandPosition}%`,
+          transform: 'translateY(50%)',
+          left: '-60px',
+          width: '60px',
+          height: `${repBandLinePx}px`,
+          transition: 'height 160ms ease',
+        }}
+      />
+      <div
+        className={`absolute ${repBandColor} z-20 shadow-lg rounded-r-full pointer-events-none`}
+        style={{
+          bottom: `${repBandPosition}%`,
+          transform: 'translateY(50%)',
+          right: '-60px',
+          width: '60px',
+          height: `${repBandLinePx}px`,
           transition: 'height 160ms ease',
         }}
       />

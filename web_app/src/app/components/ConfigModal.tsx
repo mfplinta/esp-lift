@@ -97,36 +97,6 @@ export default function ConfigModal({
               App
             </h3>
 
-            {/* Strict Mode */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <Label
-                    htmlFor="strict-mode"
-                    className="text-base font-semibold"
-                  >
-                    Strict Mode
-                  </Label>
-                  <p
-                    className={`text-sm mt-1 ${
-                      isDarkMode ? 'text-gray-400' : 'text-gray-600'
-                    }`}
-                  >
-                    Count reps only when the handle passes the green threshold
-                    line
-                  </p>
-                </div>
-                <Switch
-                  id="strict-mode"
-                  checked={config.strictMode}
-                  onCheckedChange={(checked) =>
-                    dispatch(setConfig({ strictMode: checked }))
-                  }
-                  className="ml-4"
-                />
-              </div>
-            </div>
-
             {/* Auto-Set Completion */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">

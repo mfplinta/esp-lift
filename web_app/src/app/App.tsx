@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useWakeLock } from 'react-screen-wake-lock';
 import { Sun, Moon, Settings, Wifi, Dumbbell, Bell } from 'lucide-react';
 import MachineVisualizer from './components/MachineVisualizer';
 import StatsDisplay from './components/StatsDisplay';
@@ -9,23 +10,20 @@ import NotificationStack, {
   NotificationConfig,
   NotificationHandle,
 } from './components/NotificationStack';
-import useWebSocket from 'react-use-websocket-lite';
 import WallClock from './components/WallClock';
 import {
-  applyRepCompleted,
   hydrateConfig,
   hydrateSetHistory,
   hydrateUsers,
   setExerciseData,
-  setLastMessageTime,
-  setSliderPositionLeft,
-  setSliderPositionRight,
-  reset,
   toggleTheme,
   updateExerciseThreshold,
+  updateExerciseRepBand,
   useAppDispatch,
   useAppSelector,
+  setWakelockTimeoutAt,
 } from './store';
+import { wsConnect, wsDisconnect, wsSendThresholds } from './wsMiddleware';
 import SetHistory from './components/SetHistory';
 import { Exercise, HardwareConfig } from './models';
 import DebugPanel from './components/DebugPanel';
@@ -48,16 +46,11 @@ const MSG_WEBSOCKET_CONNECTING = 'Connecting...';
 const MSG_WEBSOCKET_CONNECTED = 'Connected';
 const MSG_WEBSOCKET_ERROR = 'Error connecting to device';
 const MSG_WEBSOCKET_DISCONNECTED = 'Disconnected. Reconnecting...';
-const HANDSHAKE_INTERVAL_MS = 15000;
 const WAKELOCK_TIMEOUT_MS = 5 * 60 * 1000;
-
-const host = window.location.href.split('/')[2];
-const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 
 export default function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [showSelector, setShowSelector] = useState(false);
-  const [wsEnabled, setWsEnabled] = useState(true);
   const [hardwareSettings, setHardwareSettings] = useState<HardwareConfig>({
     movement: {
       debounceInterval: 100,
@@ -67,10 +60,8 @@ export default function App() {
 
   // Refs
   const notificationRef = useRef<NotificationHandle>(null);
-  const handshakeExpiredRef = useRef(false);
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const wakeLockTimerRef = useRef<number | null>(null);
-  const lastMovementAtRef = useRef<number | null>(null);
+  const mountedRef = useRef(false);
 
   const dispatch = useAppDispatch();
   const {
@@ -79,11 +70,8 @@ export default function App() {
     exercises,
     selectedExercise,
     sliderThreshold,
-    lastMessageTime,
-    reps,
-    sets,
-    isResting,
-    activeTime,
+    sliderRepBand,
+    lastMovementTime,
   } = useAppSelector(
     (s) => ({
       config: s.machine.config,
@@ -91,14 +79,21 @@ export default function App() {
       exercises: s.machine.exercises,
       selectedExercise: s.machine.selectedExercise,
       sliderThreshold: s.machine.sliderThreshold,
-      lastMessageTime: s.machine.lastMessageTime,
+      sliderRepBand: s.machine.sliderRepBand,
+      lastMovementTime: s.machine.lastMovementTime,
       reps: s.machine.reps,
       sets: s.machine.sets,
       isResting: s.machine.isResting,
       activeTime: s.machine.activeTime,
+      repTarget: s.machine.repTarget,
+      wakelockTimeoutAt: s.machine.wakelockTimeoutAt,
     }),
     shallowEqual
   );
+
+  const wsReadyState = useAppSelector((s) => s.machine.wsReadyState);
+  const wsErrored = useAppSelector((s) => s.machine.wsErrored);
+  const calibrationEvent = useAppSelector((s) => s.machine.calibrationEvent);
 
   const { data: exercisesData, error: exercisesError } = useGetExercisesQuery();
   const { data: settingsData, error: settingsError } = useGetSettingsQuery();
@@ -110,40 +105,6 @@ export default function App() {
   const [upsertExercise] = useUpsertExerciseMutation();
 
   const [repCounterOpen, setRepCounterOpen] = useState(false);
-  const [repTarget, setRepTarget] = useState({
-    enabled: false,
-    reps: 10,
-    sets: 3,
-    restEnabled: false,
-    restMinutes: 0,
-    restSeconds: 0,
-  });
-  const lastBellSetRef = useRef<number | null>(null);
-  const lastFinalBellSetRef = useRef<number | null>(null);
-  const restTimerRef = useRef<number | null>(null);
-  const audioUnlockedRef = useRef(false);
-  const bellPoolsRef = useRef<Record<string, HTMLAudioElement[]>>({
-    '/set_rest_bell.mp3': [],
-    '/workout_bell.mp3': [],
-  });
-  const restStartRef = useRef<number | null>(null);
-  const restBellRungRef = useRef<boolean>(false);
-
-  // Reset bell flag only when rest starts to avoid repeated ringing when
-  // `activeTime` updates while resting.
-  useEffect(() => {
-    if (isResting) {
-      restBellRungRef.current = false;
-    }
-  }, [isResting]);
-
-  const getRestInfo = useCallback(() => {
-    // Return configured rest total and formatted minutes/seconds.
-    const totalConfigured = repTarget.restMinutes * 60 + repTarget.restSeconds;
-    const mins = Math.floor(totalConfigured / 60);
-    const secs = Math.floor(totalConfigured % 60);
-    return { totalConfigured, mins, secs };
-  }, [repTarget]);
 
   // --- Helpers ---
   const notify = useCallback(
@@ -156,58 +117,26 @@ export default function App() {
     []
   );
 
-  const releaseWakeLock = useCallback(async () => {
-    if (wakeLockTimerRef.current) {
-      window.clearTimeout(wakeLockTimerRef.current);
-      wakeLockTimerRef.current = null;
-    }
-
-    if (wakeLockRef.current) {
-      try {
-        await wakeLockRef.current.release();
-      } catch (e) {
-        // no-op
-      } finally {
-        wakeLockRef.current = null;
-      }
-    }
-  }, []);
-
-  const requestWakeLock = useCallback(async () => {
-    if (!('wakeLock' in navigator)) return;
-    if (document.visibilityState !== 'visible') return;
-
-    if (!wakeLockRef.current) {
-      try {
-        wakeLockRef.current = await (
-          navigator as Navigator & {
-            wakeLock?: {
-              request: (type: 'screen') => Promise<WakeLockSentinel>;
-            };
-          }
-        ).wakeLock?.request('screen');
-
-        wakeLockRef.current?.addEventListener('release', () => {
-          wakeLockRef.current = null;
-        });
-      } catch (e) {
-        console.warn('Failed to acquire wake lock', e);
-      }
-    }
-  }, []);
+  const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock({
+    reacquireOnPageVisible: true,
+    onError: (e) => console.warn('Failed to acquire wake lock', e),
+  });
 
   const bumpWakeLock = useCallback(async () => {
-    lastMovementAtRef.current = Date.now();
     await requestWakeLock();
 
     if (wakeLockTimerRef.current) {
       window.clearTimeout(wakeLockTimerRef.current);
     }
 
-    wakeLockTimerRef.current = window.setTimeout(() => {
-      releaseWakeLock();
+    const timeoutAt = Date.now() + WAKELOCK_TIMEOUT_MS;
+    dispatch(setWakelockTimeoutAt(timeoutAt));
+
+    wakeLockTimerRef.current = window.setTimeout(async () => {
+      await releaseWakeLock();
+      dispatch(setWakelockTimeoutAt(null));
     }, WAKELOCK_TIMEOUT_MS);
-  }, [releaseWakeLock, requestWakeLock]);
+  }, [requestWakeLock, releaseWakeLock, dispatch]);
 
   const onAddExercise = async (exercise: Exercise) => {
     try {
@@ -255,77 +184,84 @@ export default function App() {
     }
   };
 
-  // --- WebSocket ---
-  const { readyState, sendMessage } = useWebSocket({
-    url: `${wsProtocol}://${host}/ws`,
-    connect: wsEnabled,
-    shouldReconnect: true,
-    retryOnError: true,
-    reconnectInterval: (attempt) => Math.min(10000, 1000 * attempt),
-    onOpen: () => {
-      dispatch(setLastMessageTime(Date.now()));
-      handshakeExpiredRef.current = false;
+  // --- WebSocket lifecycle ---
+  useEffect(() => {
+    dispatch(wsConnect());
+    return () => {
+      dispatch(wsDisconnect());
+    };
+  }, [dispatch]);
+
+  // --- WS status notifications ---
+  useEffect(() => {
+    if (wsReadyState < 0) return; // not started
+
+    if (wsReadyState === WebSocket.CONNECTING) {
+      notify(MSG_WEBSOCKET_CONNECTING, {
+        variant: 'info',
+        icon: Wifi,
+        autoDismiss: 0,
+      });
+    } else if (wsReadyState === WebSocket.OPEN) {
+      dismissNotification(MSG_WEBSOCKET_CONNECTING);
+      dismissNotification(MSG_WEBSOCKET_DISCONNECTED);
+      dismissNotification(MSG_WEBSOCKET_ERROR);
       notify(MSG_WEBSOCKET_CONNECTED, { variant: 'success', icon: Wifi });
-    },
-    onClose: () => {
+    } else if (wsReadyState === WebSocket.CLOSED) {
+      dismissNotification(MSG_WEBSOCKET_CONNECTING);
+      if (wsErrored) {
+        notify(MSG_WEBSOCKET_ERROR, {
+          variant: 'error',
+          icon: Wifi,
+          autoDismiss: 0,
+        });
+      }
       notify(MSG_WEBSOCKET_DISCONNECTED, {
         variant: 'error',
         icon: Wifi,
         autoDismiss: 0,
       });
-    },
-    onError: () => {
-      notify(MSG_WEBSOCKET_ERROR, {
-        variant: 'error',
-        icon: Wifi,
-        autoDismiss: 0,
+    }
+  }, [wsReadyState, wsErrored, notify, dismissNotification]);
+
+  // --- Calibration notifications ---
+  useEffect(() => {
+    if (!calibrationEvent) return;
+    if (calibrationEvent.state === 'seek_max') {
+      notify(`Pull ${calibrationEvent.name} to calibrate, then let go`, {
+        autoDismiss: 1000,
+        icon: Dumbbell,
       });
-    },
-    onMessage: (e) => {
-      const data: {
-        event?: 'position' | 'rep' | 'threshold' | 'handshake';
-        name: string;
-        calibrated: number;
-        cal_state: 'idle' | 'seek_max' | 'done';
-      } = JSON.parse(e.data);
-      dispatch(setLastMessageTime(Date.now()));
-      handshakeExpiredRef.current = false;
-      dismissNotification(MSG_WEBSOCKET_DISCONNECTED);
+    } else if (calibrationEvent.state === 'idle') {
+      notify(
+        `${calibrationEvent.name.charAt(0).toUpperCase() + calibrationEvent.name.slice(1)} calibration reset`,
+        { variant: 'info' }
+      );
+    }
+  }, [calibrationEvent, notify]);
 
-      if (data.event === 'handshake') {
-        return;
-      }
+  // --- Bump wakelock on position events ---
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    bumpWakeLock();
+  }, [lastMovementTime, bumpWakeLock]);
 
-      const eventType = data.event ?? 'position';
-      if (eventType === 'rep') {
-        if (data.name === 'right' || data.name === 'left') {
-          dispatch(applyRepCompleted(data.name));
-        }
-        return;
-      }
-
-      if (eventType === 'position') {
-        bumpWakeLock();
-        const calibrated = Math.min(Math.max(0, data.calibrated ?? 0), 100);
-
-        if (data.name === 'right') dispatch(setSliderPositionRight(calibrated));
-        else dispatch(setSliderPositionLeft(calibrated));
-
-        if (data.cal_state == 'seek_max')
-          notify(`Pull ${data.name} to calibrate, then let go`, {
-            autoDismiss: 1000,
-            icon: Dumbbell,
-          });
-
-        if (data.cal_state == 'idle') {
-          notify(
-            `${data.name.charAt(0).toUpperCase() + data.name.slice(1)} calibration reset`,
-            { variant: 'info' }
-          );
-        }
-      }
-    },
-  });
+  // --- Send thresholds on change or reconnect ---
+  useEffect(() => {
+    if (wsReadyState !== WebSocket.OPEN) return;
+    dispatch(
+      wsSendThresholds({ threshold: sliderThreshold, repBand: sliderRepBand })
+    );
+  }, [
+    wsReadyState,
+    sliderThreshold,
+    sliderRepBand,
+    selectedExercise,
+    dispatch,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -360,85 +296,39 @@ export default function App() {
   }, [settingsError]);
 
   useEffect(() => {
-    let timer: number | undefined;
-
-    if (readyState === WebSocket.CONNECTING) {
-      notify(MSG_WEBSOCKET_CONNECTING, {
-        variant: 'info',
-        icon: Wifi,
-        autoDismiss: 0,
-      });
-    } else if (readyState === WebSocket.OPEN) {
-      dismissNotification(MSG_WEBSOCKET_CONNECTING);
-      dismissNotification(MSG_WEBSOCKET_DISCONNECTED);
-      dismissNotification(MSG_WEBSOCKET_ERROR);
-
-      timer = window.setInterval(() => {
-        const elapsed = Date.now() - lastMessageTime;
-        if (elapsed <= HANDSHAKE_INTERVAL_MS) return;
-        if (handshakeExpiredRef.current) return;
-
-        handshakeExpiredRef.current = true;
-        setWsEnabled(false);
-        window.setTimeout(() => setWsEnabled(true), 500);
-      }, 1000);
-    } else if (readyState === WebSocket.CLOSED) {
-      dismissNotification(MSG_WEBSOCKET_CONNECTING);
-    }
-
-    return () => {
-      if (timer) window.clearInterval(timer);
-    };
-  }, [readyState, lastMessageTime]);
-
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      const lastMovement = lastMovementAtRef.current;
-      if (document.visibilityState === 'visible' && lastMovement) {
-        const elapsed = Date.now() - lastMovement;
-        if (elapsed < WAKELOCK_TIMEOUT_MS) {
-          requestWakeLock();
-          return;
-        }
-      }
-
-      releaseWakeLock();
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      releaseWakeLock();
-    };
-  }, [releaseWakeLock, requestWakeLock]);
-
-  const sendThresholds = useCallback(
-    (value: number) => {
-      if (readyState !== WebSocket.OPEN) return;
-      const clamped = Math.min(Math.max(0, value), 100);
-      sendMessage(
-        JSON.stringify({ event: 'threshold', name: 'left', threshold: clamped })
-      );
-      sendMessage(
-        JSON.stringify({
-          event: 'threshold',
-          name: 'right',
-          threshold: clamped,
-        })
-      );
-    },
-    [readyState, sendMessage]
-  );
-
-  useEffect(() => {
     if (!selectedExercise) return;
-    sendThresholds(selectedExercise.thresholdPercentage);
-  }, [selectedExercise, sendThresholds]);
+    if (sliderRepBand === (selectedExercise.repBand ?? 10)) return;
 
-  useEffect(() => {
-    sendThresholds(sliderThreshold);
-  }, [sliderThreshold, sendThresholds]);
+    const matchingExercise = exercises.find(
+      (exercise) => exercise.name === selectedExercise.name
+    );
+    const resolvedCategoryId =
+      selectedExercise.categoryId ?? matchingExercise?.categoryId;
+
+    dispatch(
+      updateExerciseRepBand({
+        name: selectedExercise.name,
+        repBand: sliderRepBand,
+      })
+    );
+
+    upsertExercise({
+      ...selectedExercise,
+      repBand: sliderRepBand,
+      ...(resolvedCategoryId ? { categoryId: resolvedCategoryId } : {}),
+    })
+      .unwrap()
+      .catch(() => {
+        notify('Failed to save rep band', { variant: 'error' });
+      });
+  }, [
+    dispatch,
+    notify,
+    selectedExercise,
+    sliderRepBand,
+    upsertExercise,
+    exercises,
+  ]);
 
   useEffect(() => {
     if (!selectedExercise) return;
@@ -474,164 +364,6 @@ export default function App() {
     upsertExercise,
     exercises,
   ]);
-
-  const playBell = useCallback((bellUrl: string) => {
-    const pool = bellPoolsRef.current[bellUrl] ?? [];
-    let audio = pool.find((item) => item.paused || item.ended);
-    if (!audio) {
-      audio = new Audio(bellUrl);
-      audio.preload = 'auto';
-      audio.volume = 0.8;
-      pool.push(audio);
-      bellPoolsRef.current[bellUrl] = pool;
-    }
-
-    audio.currentTime = 0;
-    audio.play();
-  }, []);
-
-  useEffect(() => {
-    const preload = (bellUrl: string) => {
-      const pool = bellPoolsRef.current[bellUrl] ?? [];
-      if (pool.length === 0) {
-        const audio = new Audio(bellUrl);
-        audio.preload = 'auto';
-        audio.volume = 0.8;
-        pool.push(audio);
-        bellPoolsRef.current[bellUrl] = pool;
-      }
-    };
-
-    preload('/set_rest_bell.mp3');
-    preload('/workout_bell.mp3');
-  }, []);
-
-  useEffect(() => {
-    if (audioUnlockedRef.current) return;
-
-    const unlock = () => {
-      if (audioUnlockedRef.current) return;
-      audioUnlockedRef.current = true;
-
-      Object.values(bellPoolsRef.current).forEach((pool) => {
-        pool.forEach((audio) => {
-          audio.muted = true;
-          audio
-            .play()
-            .then(() => {
-              audio.pause();
-              audio.currentTime = 0;
-              audio.muted = false;
-            })
-            .catch(() => {
-              audio.muted = false;
-            });
-        });
-      });
-    };
-
-    window.addEventListener('pointerdown', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
-
-    return () => {
-      window.removeEventListener('pointerdown', unlock);
-      window.removeEventListener('keydown', unlock);
-    };
-  }, []);
-
-  const isFinalTargetSet = repTarget.enabled
-    ? sets === Math.max(0, repTarget.sets - 1)
-    : false;
-  const isNearTarget =
-    repTarget.enabled && reps >= Math.max(0, repTarget.reps - 2) && !isResting;
-
-  useEffect(() => {
-    // Robust bell and set increment logic
-    if (!repTarget.enabled || isResting) return;
-
-    // If reps exceed or equal target, increment set if not already done
-    if (reps >= repTarget.reps) {
-      // Final set logic
-      if (isFinalTargetSet) {
-        if (lastFinalBellSetRef.current !== sets) {
-          lastFinalBellSetRef.current = sets;
-          lastBellSetRef.current = sets;
-          playBell('/workout_bell.mp3');
-        }
-      } else {
-        // Normal set logic
-        if (lastBellSetRef.current !== sets) {
-          lastBellSetRef.current = sets;
-          playBell('/set_rest_bell.mp3');
-        }
-      }
-    } else {
-      // If reps reset or go below target, reset bell refs
-      lastBellSetRef.current = null;
-      lastFinalBellSetRef.current = null;
-    }
-  }, [isFinalTargetSet, isResting, playBell, repTarget, reps, sets]);
-
-  useEffect(() => {
-    // clear any previous timer
-    if (restTimerRef.current) {
-      window.clearTimeout(restTimerRef.current);
-      restTimerRef.current = null;
-    }
-
-    if (!repTarget.restEnabled || !isResting) {
-      restStartRef.current = null;
-      return;
-    }
-
-    const { totalConfigured } = getRestInfo();
-    if (totalConfigured <= 0) return;
-
-    // mark rest start
-    restStartRef.current = Date.now();
-
-    const delaySeconds = Math.max(0, totalConfigured - (activeTime || 0));
-
-    if (delaySeconds <= 0) {
-      if (!restBellRungRef.current) {
-        playBell('/set_rest_bell.mp3');
-        restBellRungRef.current = true;
-      }
-      return;
-    }
-
-    restTimerRef.current = window.setTimeout(
-      () => {
-        if (!restBellRungRef.current) {
-          playBell('/set_rest_bell.mp3');
-          restBellRungRef.current = true;
-        }
-        restTimerRef.current = null;
-      },
-      Math.ceil(delaySeconds * 1000)
-    );
-
-    return () => {
-      if (restTimerRef.current) {
-        window.clearTimeout(restTimerRef.current);
-        restTimerRef.current = null;
-      }
-    };
-  }, [isResting, playBell, repTarget, getRestInfo, activeTime]);
-
-  // Rotate set history at midnight
-  useEffect(() => {
-    let lastDay = new Date().toDateString();
-    const timer = window.setInterval(() => {
-      const nextDay = new Date().toDateString();
-      if (nextDay !== lastDay) {
-        lastDay = nextDay;
-        dispatch(reset());
-      }
-    }, 60000);
-
-    return () => window.clearInterval(timer);
-  }, [dispatch]);
 
   return (
     <div
@@ -678,37 +410,7 @@ export default function App() {
           <div className="flex flex-col md:flex-row items-center gap-6 md:gap-12 pointer-events-auto">
             {/* Stats Display */}
             <div className="flex flex-col items-center md:items-end gap-3 order-1 md:order-2">
-              <StatsDisplay
-                size="large"
-                repsTone={
-                  isFinalTargetSet && reps >= repTarget.reps
-                    ? 'reached'
-                    : isNearTarget
-                      ? 'near'
-                      : 'normal'
-                }
-              />
-              {repTarget.enabled && (
-                <div
-                  className={`text-xs tracking-wide uppercase text-center md:text-right ${
-                    isDarkMode ? 'text-white/50' : 'text-black/50'
-                  }`}
-                >
-                  Target: {repTarget.sets} sets × {repTarget.reps} reps
-                </div>
-              )}
-              {repTarget.restEnabled && (
-                <div
-                  className={`text-xs tracking-wide uppercase text-center md:text-right ${
-                    isDarkMode ? 'text-white/50' : 'text-black/50'
-                  }`}
-                >
-                  {(() => {
-                    const info = getRestInfo();
-                    return `REST: ${info.mins}M ${info.secs}S`;
-                  })()}
-                </div>
-              )}
+              <StatsDisplay size="large" />
               <button
                 onClick={() => setRepCounterOpen(true)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-full text-sm shadow-lg transition-transform hover:scale-105 ${isDarkMode ? 'bg-white text-black' : 'bg-black text-white'}`}
@@ -747,8 +449,6 @@ export default function App() {
       <RepCounterModal
         isOpen={repCounterOpen}
         onClose={() => setRepCounterOpen(false)}
-        target={repTarget}
-        onChange={setRepTarget}
       />
       <NotificationStack ref={notificationRef} theme={config.theme} />
 

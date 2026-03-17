@@ -3,9 +3,16 @@
 let
   programmingBaudRate = 921600;
   monitorBaudRate = 921600;
+  pkgsPy310 = import inputs.nixpkgs-py310 {
+    system = pkgs.stdenv.hostPlatform.system;
+    config = {};
+  };
 in
 {
-  overlays = [ inputs.esp-dev.overlays.default ];
+  overlays = [
+    (final: prev: { python310 = pkgsPy310.python310; })
+    inputs.esp-dev.overlays.default
+  ];
   packages = [ pkgs.esp-idf-full ];
 
   enterShell = ''
@@ -16,7 +23,7 @@ in
     set -e
 
     BUILD_ONLY=0
-    FLASH_SIZE=""
+    FLASH_SIZE="4mb"
     MERGE_FLAG=""
     
     while [ "$#" -gt 0 ]; do
@@ -56,18 +63,35 @@ in
       esac
     done
 
-    if [ -n "$FLASH_SIZE" ]; then
-      case "$FLASH_SIZE" in
-        2mb|4mb)
-          ;;
-        *)
-          echo "Invalid --flash-size value: $FLASH_SIZE (use 2mb or 4mb)"
-          exit 1
-          ;;
-      esac
-    fi
+    case "$FLASH_SIZE" in
+      2mb|4mb)
+        ;;
+      *)
+        echo "Invalid --flash-size value: $FLASH_SIZE (use 2mb or 4mb)"
+        exit 1
+        ;;
+    esac
+
+    set_common_config() {
+      sed -i \
+        -e 's/^.*CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=.*/CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y/' \
+        -e 's/^# CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH is not set.*/CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y/' \
+        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=.*/# CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT is not set/' \
+        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_GDBSTUB=.*/# CONFIG_ESP_SYSTEM_PANIC_GDBSTUB is not set/' \
+        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT=.*/# CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT is not set/' \
+        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_NONE=.*/# CONFIG_ESP_SYSTEM_PANIC_NONE is not set/' \
+        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=.*/CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y/' \
+        -e 's/^CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=.*/CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096/' \
+        -e 's/^.*CONFIG_PARTITION_TABLE_SINGLE_APP=.*/# CONFIG_PARTITION_TABLE_SINGLE_APP is not set/' \
+        -e 's/^.*CONFIG_PARTITION_TABLE_CUSTOM is not set.*/CONFIG_PARTITION_TABLE_CUSTOM=y/' \
+        -e 's/^# CONFIG_HTTPD_WS_SUPPORT is not set.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
+        -e 's/^CONFIG_HTTPD_WS_SUPPORT=.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
+        -e 's/^CONFIG_LWIP_MAX_SOCKETS=.*/CONFIG_LWIP_MAX_SOCKETS=32/' \
+        sdkconfig
+    }
 
     set_2mb() {
+      set_common_config
       sed -i \
         -e 's/^CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="2MB"/' \
         -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set/' \
@@ -78,6 +102,7 @@ in
     }
 
     set_4mb() {
+      set_common_config
       sed -i \
         -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="4MB"/' \
         -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y/' \
@@ -91,8 +116,8 @@ in
       idf.py reconfigure
 
       sed -i \
-        -e 's/# CONFIG_PARTITION_TABLE_CUSTOM is not set*/CONFIG_PARTITION_TABLE_CUSTOM=y/' \
-        -e 's/^.*CONFIG_HTTPD_WS_SUPPORT.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
+        -e 's/^.*CONFIG_ESP_HTTPS_SERVER_ENABLE.*/CONFIG_ESP_HTTPS_SERVER_ENABLE=y/' \
+        -e 's/^.*CONFIG_ESP_TLS_SERVER_SESSION_TICKETS.*/CONFIG_ESP_TLS_SERVER_SESSION_TICKETS=y/' \
         -e 's/^CONFIG_MONITOR_BAUD=.*/CONFIG_MONITOR_BAUD=${toString monitorBaudRate}/' \
         -e 's/^CONFIG_ESPTOOLPY_MONITOR_BAUD=.*/CONFIG_ESPTOOLPY_MONITOR_BAUD=${toString monitorBaudRate}/' \
         -e 's/^# CONFIG_ESP_CONSOLE_UART_CUSTOM.*/CONFIG_ESP_CONSOLE_UART_CUSTOM=y/' \
@@ -104,14 +129,12 @@ in
       set_4mb
     fi
 
-    if [ -n "$FLASH_SIZE" ]; then
-      echo "Applying flash size: $FLASH_SIZE"
+    echo "Applying flash size: $FLASH_SIZE"
 
-      if [ "$FLASH_SIZE" = "2mb" ]; then
-        set_2mb
-      else
-        set_4mb
-      fi
+    if [ "$FLASH_SIZE" = "2mb" ]; then
+      set_2mb
+    else
+      set_4mb
     fi
 
     (

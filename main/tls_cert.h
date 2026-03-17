@@ -35,6 +35,9 @@ typedef struct {
 #define TLS_KEY_PATH "/cfg/https_key.pem"
 #define TLS_SAN_PATH "/cfg/https_san.json"
 
+#define TLS_CUSTOM_CERT_PATH "/cfg/https_custom_cert.pem"
+#define TLS_CUSTOM_KEY_PATH "/cfg/https_custom_key.pem"
+
 #define TLS_CERT_BUFFER_SIZE 4096
 #define TLS_KEY_BUFFER_SIZE 2048
 
@@ -50,6 +53,10 @@ typedef struct {
 static bool file_exists(const char *path) {
   struct stat st;
   return stat(path, &st) == 0;
+}
+
+bool tls_has_custom_cert(void) {
+  return file_exists(TLS_CUSTOM_CERT_PATH) && file_exists(TLS_CUSTOM_KEY_PATH);
 }
 
 static void sanitize_san_value(const char *input, char *output, size_t out_len) {
@@ -314,6 +321,12 @@ static void build_desired_san(tls_san_info_t *out, const char *ap_ip, const char
 }
 
 esp_err_t tls_cert_regenerate(const char *ap_ip, const char *sta_ip) {
+  /* Never regenerate when custom certs are installed */
+  if (tls_has_custom_cert()) {
+    ESP_LOGI(TAG_TLS, "Custom certificate installed, skipping regeneration");
+    return ESP_OK;
+  }
+
   tls_san_info_t desired = {0};
   build_desired_san(&desired, ap_ip, sta_ip);
 
@@ -356,6 +369,19 @@ esp_err_t tls_cert_ensure(const char *ap_ip, const char *sta_ip, tls_cert_bundle
   out->key_pem = NULL;
   out->cert_len = 0;
   out->key_len = 0;
+
+  /* If custom certs are installed, always use them and skip generation */
+  if (tls_has_custom_cert()) {
+    ESP_LOGI(TAG_TLS, "Using custom HTTPS certificate");
+    if (read_file_to_buf(TLS_CUSTOM_CERT_PATH, &out->cert_pem, &out->cert_len) != ESP_OK)
+      return ESP_FAIL;
+    if (read_file_to_buf(TLS_CUSTOM_KEY_PATH, &out->key_pem, &out->key_len) != ESP_OK) {
+      free(out->cert_pem);
+      out->cert_pem = NULL;
+      return ESP_FAIL;
+    }
+    return ESP_OK;
+  }
 
   tls_san_info_t desired = {0};
   build_desired_san(&desired, ap_ip, sta_ip);

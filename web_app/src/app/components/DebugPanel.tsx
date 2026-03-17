@@ -8,9 +8,12 @@ export default function DebugPanel() {
     width: number;
     height: number;
   }>({ width: 0, height: 0 });
-  const lastMessageMs = useAppSelector((s) =>
-    (Date.now() - s.machine.lastMessageTime).toString().padStart(7)
-  );
+  const { lastMessageMs, wakelockTimeoutAt } = useAppSelector((s) => ({
+    lastMessageMs: (Date.now() - s.machine.lastMessageTime)
+      .toString()
+      .padStart(7),
+    wakelockTimeoutAt: s.machine.wakelockTimeoutAt,
+  }));
 
   useEffect(() => {
     let frameId: number;
@@ -54,6 +57,15 @@ export default function DebugPanel() {
               <td className="text-right">
                 {typeof window !== 'undefined'
                   ? `${windowSize.width}x${windowSize.height}`
+                  : 'N/A'}
+              </td>
+            </tr>
+
+            <tr>
+              <td className="pr-2 text-right">Wakelock until |</td>
+              <td className="text-right">
+                {wakelockTimeoutAt
+                  ? new Date(wakelockTimeoutAt).toLocaleTimeString()
                   : 'N/A'}
               </td>
             </tr>

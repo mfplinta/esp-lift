@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useReducer } from 'react';
 import {
   Menu,
   Download,
@@ -15,6 +15,7 @@ import { shallowEqual } from 'react-redux';
 import {
   clearAllHistory,
   clearHistoryForDate,
+  deleteHistoryRecord,
   useAppDispatch,
   useAppSelector,
 } from '../store';
@@ -30,6 +31,9 @@ export default function SetHistory() {
     'active'
   );
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [preToggleView, setPreToggleView] = useState<'active' | 'day-detail'>(
+    'active'
+  );
   const [todayStr, setTodayStr] = useState(new Date().toDateString());
 
   const dispatch = useAppDispatch();
@@ -42,6 +46,19 @@ export default function SetHistory() {
     }),
     shallowEqual
   );
+
+  // Rotate set history at midnight
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const next = new Date().toDateString();
+      setTodayStr((prev) => {
+        if (prev !== next) return next;
+        return prev;
+      });
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -143,7 +160,13 @@ export default function SetHistory() {
     return () => window.clearInterval(timer);
   }, [todayStr]);
 
-  const totalsByExercise = filteredHistory.reduce(
+  const totalsDate =
+    preToggleView === 'day-detail' && selectedDate ? selectedDate : todayStr;
+  const totalsSource = filteredHistory.filter(
+    (r) => new Date(r.timestamp).toDateString() === totalsDate
+  );
+
+  const totalsByExercise = totalsSource.reduce(
     (
       acc: Record<string, { reps: number; duration: number; sets: number }>,
       record
@@ -186,7 +209,7 @@ export default function SetHistory() {
                     view === 'day-detail'
                       ? 'days'
                       : view === 'totals'
-                        ? 'active'
+                        ? preToggleView
                         : 'active'
                   )
                 }
@@ -201,17 +224,22 @@ export default function SetHistory() {
                 : view === 'days'
                   ? 'Past Days'
                   : view === 'totals'
-                    ? 'Totals'
+                    ? `Totals — ${totalsDate === todayStr ? 'Today' : totalsDate}`
                     : selectedDate}
             </h3>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() =>
-                setView((current) =>
-                  current === 'totals' ? 'active' : 'totals'
-                )
-              }
+              onClick={() => {
+                if (view === 'totals') {
+                  setView(preToggleView);
+                } else {
+                  setPreToggleView(
+                    view === 'day-detail' ? 'day-detail' : 'active'
+                  );
+                  setView('totals');
+                }
+              }}
               className={`p-1 rounded transition-colors ${
                 view === 'totals' ? 'bg-blue-500/20' : 'hover:bg-black/10'
               }`}
@@ -302,7 +330,14 @@ export default function SetHistory() {
                 [...activeHistory]
                   .reverse()
                   .map((record, i) => (
-                    <SetCard key={i} record={record} formatTime={formatTime} />
+                    <SetCard
+                      key={record.timestamp}
+                      record={record}
+                      formatTime={formatTime}
+                      onDelete={() =>
+                        dispatch(deleteHistoryRecord(record.timestamp))
+                      }
+                    />
                   ))}
               {selectedUser && activeHistory.length === 0 && !isResting && (
                 <EmptyState />

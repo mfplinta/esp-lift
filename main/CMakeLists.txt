@@ -6,6 +6,7 @@ set(component_requires
     esp_https_server
     mbedtls
     nvs_flash
+    espcoredump
 )
 
 idf_component_register(

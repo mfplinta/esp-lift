@@ -1,5 +1,8 @@
 import { X, ChevronUp, ChevronDown, Bell } from 'lucide-react';
-import { useAppSelector } from '../store';
+import { setRepTarget, useAppDispatch, useAppSelector } from '../store';
+import { Switch } from './ui/switch';
+import { useState } from 'react';
+import { shallowEqual } from 'react-redux';
 
 export type RepTargetConfig = {
   enabled: boolean;
@@ -13,8 +16,6 @@ export type RepTargetConfig = {
 interface RepCounterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  target: RepTargetConfig;
-  onChange: (next: RepTargetConfig) => void;
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -23,16 +24,20 @@ const clamp = (value: number, min: number, max: number) =>
 export default function RepCounterModal({
   isOpen,
   onClose,
-  target,
-  onChange,
 }: RepCounterModalProps) {
-  const isDarkMode = useAppSelector((s) => s.machine.config.theme === 'dark');
+  const { isDarkMode, repTarget } = useAppSelector(
+    (s) => ({
+      isDarkMode: s.machine.config.theme === 'dark',
+      repTarget: s.machine.repTarget,
+    }),
+    shallowEqual
+  );
+
+  const dispatch = useAppDispatch();
+  const update = (partial: Partial<RepTargetConfig>) =>
+    dispatch(setRepTarget({ ...repTarget, ...partial }));
 
   if (!isOpen) return null;
-
-  const update = (partial: Partial<RepTargetConfig>) => {
-    onChange({ ...target, ...partial });
-  };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
@@ -68,59 +73,61 @@ export default function RepCounterModal({
         <div className="p-4 space-y-5">
           <label className="flex items-center justify-between">
             <span className="text-base font-semibold">Enable rep target</span>
-            <input
-              type="checkbox"
-              checked={target.enabled}
-              onChange={(e) => update({ enabled: e.target.checked })}
-              className="h-5 w-5"
+            <Switch
+              checked={repTarget.enabled}
+              onCheckedChange={(checked) => update({ enabled: !!checked })}
+              className="ml-4"
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-4">
-            <CounterField
-              label="Sets"
-              value={target.sets}
-              onChange={(value) => update({ sets: value })}
-              min={1}
-              max={50}
-              isDarkMode={isDarkMode}
-            />
-            <CounterField
-              label="Reps"
-              value={target.reps}
-              onChange={(value) => update({ reps: value })}
-              min={1}
-              max={200}
-              isDarkMode={isDarkMode}
-            />
-          </div>
+          {repTarget.enabled && (
+            <div className="grid grid-cols-2 gap-4">
+              <CounterField
+                label="Sets"
+                value={repTarget.sets}
+                onChange={(value) => update({ sets: value })}
+                min={1}
+                max={50}
+                isDarkMode={isDarkMode}
+              />
+              <CounterField
+                label="Reps"
+                value={repTarget.reps}
+                onChange={(value) => update({ reps: value })}
+                min={1}
+                max={200}
+                isDarkMode={isDarkMode}
+              />
+            </div>
+          )}
 
           <label className="flex items-center justify-between">
             <span className="text-base font-semibold">Enable rest timer</span>
-            <input
-              type="checkbox"
-              checked={target.restEnabled}
-              onChange={(e) => update({ restEnabled: e.target.checked })}
-              className="h-5 w-5"
+            <Switch
+              checked={repTarget.restEnabled}
+              onCheckedChange={(checked) => update({ restEnabled: !!checked })}
+              className="ml-4"
             />
           </label>
 
-          {target.restEnabled && (
+          {repTarget.restEnabled && (
             <div className="grid grid-cols-2 gap-4">
-              <TimeField
+              <CounterField
                 label="Minutes"
-                value={target.restMinutes}
+                value={repTarget.restMinutes}
                 onChange={(value) => update({ restMinutes: value })}
                 min={0}
                 max={59}
+                rollOnMinMax={true}
                 isDarkMode={isDarkMode}
               />
-              <TimeField
+              <CounterField
                 label="Seconds"
-                value={target.restSeconds}
+                value={repTarget.restSeconds}
                 onChange={(value) => update({ restSeconds: value })}
                 min={0}
                 max={59}
+                rollOnMinMax={true}
                 isDarkMode={isDarkMode}
               />
             </div>
@@ -150,6 +157,7 @@ function CounterField({
   onChange,
   min,
   max,
+  rollOnMinMax,
   isDarkMode,
 }: {
   label: string;
@@ -157,109 +165,66 @@ function CounterField({
   onChange: (value: number) => void;
   min: number;
   max: number;
+  rollOnMinMax?: boolean;
   isDarkMode: boolean;
 }) {
-  const clamped = clamp(value, min, max);
-
+  const changeValue = (val: number) => {
+    if (rollOnMinMax) {
+      if (val > max) {
+        onChange(min);
+      } else if (val < min) {
+        onChange(max);
+      } else {
+        onChange(val);
+      }
+    } else {
+      onChange(clamp(val, min, max));
+    }
+  };
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="text-sm font-semibold uppercase tracking-wider opacity-70">
         {label}
       </div>
-      <button
-        onClick={() => onChange(clamp(clamped + 1, min, max))}
-        className={`w-full py-1.5 rounded-xl text-xl font-semibold shadow-lg transition-transform hover:scale-105 ${
-          isDarkMode
-            ? 'bg-gray-800 text-white hover:bg-gray-700'
-            : 'bg-gray-100 text-black hover:bg-gray-200'
-        }`}
-        aria-label={`Increase ${label}`}
-      >
-        <ChevronUp size={28} className="mx-auto" />
-      </button>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={clamped}
-        onChange={(e) => onChange(clamp(Number(e.target.value), min, max))}
-        className={`w-full text-center text-3xl font-bold rounded-xl border px-3 py-1.5 ${
-          isDarkMode
-            ? 'bg-gray-900 border-gray-700 text-white'
-            : 'bg-white border-gray-300 text-black'
-        }`}
-      />
-      <button
-        onClick={() => onChange(clamp(clamped - 1, min, max))}
-        className={`w-full py-1.5 rounded-xl text-xl font-semibold shadow-lg transition-transform hover:scale-105 ${
-          isDarkMode
-            ? 'bg-gray-800 text-white hover:bg-gray-700'
-            : 'bg-gray-100 text-black hover:bg-gray-200'
-        }`}
-        aria-label={`Decrease ${label}`}
-      >
-        <ChevronDown size={28} className="mx-auto" />
-      </button>
-    </div>
-  );
-}
-
-function TimeField({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  isDarkMode,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-  min: number;
-  max: number;
-  isDarkMode: boolean;
-}) {
-  const clamped = clamp(value, min, max);
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="text-sm font-semibold uppercase tracking-wider opacity-70">
-        {label}
+      <div className="flex flex-col items-center w-full gap-2">
+        <button
+          onClick={() => changeValue(value + 1)}
+          className={`w-full py-1 rounded-lg text-base font-semibold shadow transition-transform hover:scale-105 ${
+            isDarkMode
+              ? 'bg-gray-800 text-white hover:bg-gray-700'
+              : 'bg-gray-100 text-black hover:bg-gray-200'
+          }`}
+          aria-label={`Increase ${label}`}
+        >
+          <ChevronUp size={22} className="mx-auto" />
+        </button>
+        <div className="flex items-center justify-center w-full">
+          <input
+            type="number"
+            min={min - 1}
+            max={max + 1}
+            value={value}
+            onChange={(e) => changeValue(e.target.valueAsNumber)}
+            className={`w-full text-center text-3xl font-bold rounded-xl border px-6 py-1.5 appearance-none focus:outline-none hide-number-spin ${
+              isDarkMode
+                ? 'bg-gray-900 border-gray-700 text-white'
+                : 'bg-white border-gray-300 text-black'
+            }`}
+            style={{ MozAppearance: 'textfield', paddingLeft: '1.5rem' }}
+          />
+        </div>
+        <button
+          onClick={() => changeValue(value - 1)}
+          className={`w-full py-1 rounded-lg text-base font-semibold shadow transition-transform hover:scale-105 ${
+            isDarkMode
+              ? 'bg-gray-800 text-white hover:bg-gray-700'
+              : 'bg-gray-100 text-black hover:bg-gray-200'
+          }`}
+          aria-label={`Decrease ${label}`}
+        >
+          <ChevronDown size={22} className="mx-auto" />
+        </button>
       </div>
-      <button
-        onClick={() => onChange(clamp(clamped + 1, min, max))}
-        className={`w-full py-1 rounded-lg text-base font-semibold shadow transition-transform hover:scale-105 ${
-          isDarkMode
-            ? 'bg-gray-800 text-white hover:bg-gray-700'
-            : 'bg-gray-100 text-black hover:bg-gray-200'
-        }`}
-        aria-label={`Increase ${label}`}
-      >
-        <ChevronUp size={22} className="mx-auto" />
-      </button>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={clamped}
-        onChange={(e) => onChange(clamp(Number(e.target.value), min, max))}
-        className={`w-full text-center text-2xl font-semibold rounded-lg border px-2 py-1 ${
-          isDarkMode
-            ? 'bg-gray-900 border-gray-700 text-white'
-            : 'bg-white border-gray-300 text-black'
-        }`}
-      />
-      <button
-        onClick={() => onChange(clamp(clamped - 1, min, max))}
-        className={`w-full py-1 rounded-lg text-base font-semibold shadow transition-transform hover:scale-105 ${
-          isDarkMode
-            ? 'bg-gray-800 text-white hover:bg-gray-700'
-            : 'bg-gray-100 text-black hover:bg-gray-200'
-        }`}
-        aria-label={`Decrease ${label}`}
-      >
-        <ChevronDown size={22} className="mx-auto" />
-      </button>
     </div>
   );
 }

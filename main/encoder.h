@@ -194,7 +194,7 @@ void encoder_reset_calibration(encoder_t *enc) {
   enc->state.calibrated = CAL_MIN;
 }
 
-encoder_t *init_encoder(encoder_config_t enc_config) {
+encoder_t *init_encoder(encoder_config_t enc_config, const encoder_state_t *initial_cal) {
   gpio_config_t io_conf = {};
   io_conf.intr_type = GPIO_INTR_NEGEDGE;
   io_conf.pin_bit_mask =
@@ -210,14 +210,22 @@ encoder_t *init_encoder(encoder_config_t enc_config) {
   enc->state.raw_count = 0;
   enc->state.offset = 0;
   enc->state.last_time = 0;
-  set_cal_state(enc, CAL_IDLE);
-  enc->state.cal_dir = DIR_NONE;
-  enc->state.start_count = 0;
-  enc->state.max_distance = 0;
+  enc->queue = xQueueCreate(8, sizeof(encoder_event_t));
+  if (initial_cal) {
+    enc->state.cal_state = initial_cal->cal_state;
+    enc->state.cal_dir = initial_cal->cal_dir;
+    enc->state.start_count = initial_cal->start_count;
+    enc->state.max_distance = initial_cal->max_distance;
+    enc->state.calibrated = initial_cal->calibrated;
+  } else {
+    set_cal_state(enc, CAL_IDLE);
+    enc->state.cal_dir = DIR_NONE;
+    enc->state.start_count = 0;
+    enc->state.max_distance = 0;
+    enc->state.calibrated = CAL_MIN;
+  }
   enc->state.reverse_accum = 0;
   enc->state.z_seen = false;
-  enc->state.calibrated = CAL_MIN;
-  enc->queue = xQueueCreate(8, sizeof(encoder_event_t));
 
   gpio_install_isr_service(0);
   gpio_isr_handler_add(enc_config.pin_a, rotation_handler, enc);

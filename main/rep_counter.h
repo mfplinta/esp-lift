@@ -10,12 +10,13 @@
 #include "encoder.h"
 #include "utils.h"
 
-#define REP_DEADBAND 10.0
+#define REP_DEADBAND_DEFAULT 10.0
 
 typedef enum { REP_SIDE_LEFT = 0, REP_SIDE_RIGHT = 1 } rep_side_t;
 
 typedef struct {
   double thresholds[2];
+  double deadbands[2];
   bool has_threshold[2];
   bool armed[2];
 } rep_counter_t;
@@ -37,6 +38,8 @@ void rep_counter_init(rep_counter_t *counter) {
   if (!counter) return;
   counter->thresholds[REP_SIDE_LEFT] = 0.0;
   counter->thresholds[REP_SIDE_RIGHT] = 0.0;
+  counter->deadbands[REP_SIDE_LEFT] = REP_DEADBAND_DEFAULT;
+  counter->deadbands[REP_SIDE_RIGHT] = REP_DEADBAND_DEFAULT;
   counter->has_threshold[REP_SIDE_LEFT] = false;
   counter->has_threshold[REP_SIDE_RIGHT] = false;
   counter->armed[REP_SIDE_LEFT] = false;
@@ -74,7 +77,13 @@ void rep_counter_handle_ws_message(const char *payload, size_t len, void *ctx) {
   counter->has_threshold[side] = true;
   counter->armed[side] = false;
 
-  ESP_LOGI("REP_COUNTER", "Threshold updated: %s -> %.1f", name->valuestring, clamped);
+  const cJSON *rep_band = cJSON_GetObjectItem(root, "repBand");
+  if (cJSON_IsNumber(rep_band)) {
+    counter->deadbands[side] = clamp_double(rep_band->valuedouble, 0.0, 100.0);
+  }
+
+  ESP_LOGI("REP_COUNTER", "Threshold updated: %s -> %.1f (band: %.1f)", name->valuestring, clamped,
+           counter->deadbands[side]);
 
   cJSON_Delete(root);
 }
@@ -94,7 +103,8 @@ bool rep_counter_check(rep_counter_t *counter, rep_side_t side, double position,
 
   double pos = clamp_double(position, 0.0, 100.0);
   double threshold = counter->thresholds[side];
-  double arm_point = clamp_double(threshold - REP_DEADBAND, 0.0, 100.0);
+  double deadband = counter->deadbands[side];
+  double arm_point = clamp_double(threshold - deadband, 0.0, 100.0);
   double fire_point = clamp_double(threshold, 0.0, 100.0);
 
   if (!counter->armed[side] && pos <= arm_point) {

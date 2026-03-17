@@ -18,6 +18,7 @@ export default function ExerciseSelector({
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newExerciseName, setNewExerciseName] = useState('');
   const [newThreshold, setNewThreshold] = useState(70);
+  const [newRepBand, setNewRepBand] = useState(10);
   const [type, setType] = useState<'singular' | 'alternating'>('singular');
   const [categoryInput, setCategoryInput] = useState('');
   const [categoryIsNew, setCategoryIsNew] = useState(false);
@@ -66,6 +67,7 @@ export default function ExerciseSelector({
     suppressCategoryBlurRef.current = true;
     setNewExerciseName('');
     setNewThreshold(70);
+    setNewRepBand(10);
     setType('singular');
     setCategoryInput('');
     setCategoryIsNew(false);
@@ -93,6 +95,7 @@ export default function ExerciseSelector({
       onAddExercise({
         name: newExerciseName,
         thresholdPercentage: newThreshold,
+        repBand: newRepBand,
         type: type,
         // If new, send only categoryName; if existing, send only categoryId
         ...(isNewCategory
@@ -318,6 +321,31 @@ export default function ExerciseSelector({
               </div>
 
               <div className="mb-3">
+                <label className="text-sm font-medium mb-1 block">
+                  Rep Band: {newRepBand}%
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  step="1"
+                  value={newRepBand}
+                  onChange={(e) => setNewRepBand(Number(e.target.value))}
+                  className={`w-full h-2 rounded-lg appearance-none ${
+                    isDarkMode ? 'bg-gray-700' : 'bg-gray-300'
+                  } [&::-webkit-slider-thumb]:appearance-none
+                    [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:w-4
+                    [&::-webkit-slider-thumb]:rounded-full
+                    [&::-webkit-slider-thumb]:bg-current
+                    [&::-webkit-slider-thumb]:transition-transform
+                    [&::-webkit-slider-thumb]:duration-150
+                    active:[&::-webkit-slider-thumb]:scale-125
+                    `}
+                />
+              </div>
+
+              <div className="mb-3">
                 <label className="text-sm font-medium mb-2 block">
                   Category
                 </label>
@@ -350,7 +378,7 @@ export default function ExerciseSelector({
                       }, 150);
                     }}
                     className={`w-full rounded-lg border py-2 ${
-                      categoryIsNew ? 'pl-20 pr-3' : 'px-3'
+                      categoryIsNew ? 'pl-15 pr-3' : 'px-3'
                     } ${
                       isDarkMode
                         ? 'bg-gray-900 border-gray-700 text-white placeholder-gray-500'

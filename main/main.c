@@ -3,6 +3,7 @@
 #include <driver/gpio.h>
 #include <driver/uart.h>
 #include <driver/uart_vfs.h>
+#include <errno.h>
 #include <esp_attr.h>
 #include <esp_http_server.h>
 #include <esp_https_server.h>
@@ -23,7 +24,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "data/encoder_cal.h"
 #include "data/settings.h"
+
+#define ENCODER_CAL_LEFT_PATH "/cfg/encoder_cal_left.json"
+#define ENCODER_CAL_RIGHT_PATH "/cfg/encoder_cal_right.json"
 #include "encoder.h"
 #include "handlers/http_api_exercises.h"
 #include "handlers/http_api_hardware.h"
@@ -50,14 +55,84 @@ static const char *const cal_state_names[] = {
 static esp_err_t calibrate_handler(httpd_req_t *req);
 static void restart_https_server(void);
 
+static esp_err_t http_session_open(httpd_handle_t hd, int sockfd);
+static void http_session_close(httpd_handle_t hd, int sockfd);
+
 httpd_handle_t server = NULL;
 static httpd_handle_t redirect_server = NULL;
 static tls_cert_bundle_t https_bundle = {0};
 encoder_t *leftEncoder = NULL;
 encoder_t *rightEncoder = NULL;
+encoder_state_t left_cal_state = {0};
+encoder_state_t right_cal_state = {0};
 static rep_counter_t rep_counter;
 static int32_t last_left_calibrated_sent = -1;
 static int32_t last_right_calibrated_sent = -1;
+
+static uint32_t http_sessions_open = 0;
+static uint32_t redirect_sessions_open = 0;
+
+static const char *http_server_label(httpd_handle_t hd) {
+  if (hd == server) return "https";
+  if (hd == redirect_server) return "redirect";
+  return "unknown";
+}
+
+static uint32_t *http_session_counter(httpd_handle_t hd) {
+  if (hd == redirect_server) return &redirect_sessions_open;
+  return &http_sessions_open;
+}
+
+static void http_format_peer(int sockfd, char *out, size_t out_len) {
+  if (!out || out_len == 0) return;
+  out[0] = '\0';
+
+  struct sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  if (getpeername(sockfd, (struct sockaddr *) &addr, &len) != 0) {
+    snprintf(out, out_len, "peer=? errno=%d", errno);
+    return;
+  }
+
+  char ip[INET6_ADDRSTRLEN] = {0};
+  uint16_t port = 0;
+  if (addr.ss_family == AF_INET) {
+    struct sockaddr_in *a = (struct sockaddr_in *) &addr;
+    inet_ntop(AF_INET, &a->sin_addr, ip, sizeof(ip));
+    port = ntohs(a->sin_port);
+  } else if (addr.ss_family == AF_INET6) {
+    struct sockaddr_in6 *a = (struct sockaddr_in6 *) &addr;
+    inet_ntop(AF_INET6, &a->sin6_addr, ip, sizeof(ip));
+    port = ntohs(a->sin6_port);
+  } else {
+    snprintf(out, out_len, "peer=family:%d", (int) addr.ss_family);
+    return;
+  }
+
+  snprintf(out, out_len, "%s:%u", ip[0] ? ip : "?", (unsigned) port);
+}
+
+static esp_err_t http_session_open(httpd_handle_t hd, int sockfd) {
+  uint32_t *counter = http_session_counter(hd);
+  uint32_t open_now = __atomic_add_fetch(counter, 1, __ATOMIC_SEQ_CST);
+
+  char peer[64] = {0};
+  http_format_peer(sockfd, peer, sizeof(peer));
+
+  ESP_LOGW("HTTP_SESS", "[%s] open fd=%d %s open=%lu free=%lu minfree=%lu", http_server_label(hd),
+           sockfd, peer, (unsigned long) open_now, (unsigned long) esp_get_free_heap_size(),
+           (unsigned long) esp_get_minimum_free_heap_size());
+  return ESP_OK;
+}
+
+static void http_session_close(httpd_handle_t hd, int sockfd) {
+  uint32_t *counter = http_session_counter(hd);
+  uint32_t open_now = __atomic_sub_fetch(counter, 1, __ATOMIC_SEQ_CST);
+
+  ESP_LOGW("HTTP_SESS", "[%s] close fd=%d open=%lu free=%lu minfree=%lu", http_server_label(hd),
+           sockfd, (unsigned long) open_now, (unsigned long) esp_get_free_heap_size(),
+           (unsigned long) esp_get_minimum_free_heap_size());
+}
 
 #define TLS_CERT_TASK_STACK 8192
 
@@ -240,8 +315,17 @@ static esp_err_t start_https_server(void) {
   config.httpd.uri_match_fn = httpd_uri_match_wildcard;
   config.httpd.lru_purge_enable = true;
   config.httpd.keep_alive_enable = true;
+  config.httpd.keep_alive_idle = 8;
+  config.httpd.keep_alive_interval = 4;
+  config.httpd.keep_alive_count = 3;
+  config.httpd.recv_wait_timeout = 8;
+  config.httpd.send_wait_timeout = 8;
+  config.httpd.max_open_sockets = 7;
   config.httpd.max_uri_handlers = get_captive_paths_count() + 9;
+  config.httpd.open_fn = http_session_open;
+  config.httpd.close_fn = http_session_close;
   config.httpd.server_port = 443;
+  config.session_tickets = true;
   config.servercert = (const unsigned char *) https_bundle.cert_pem;
   config.servercert_len = https_bundle.cert_len;
   config.prvtkey_pem = (const unsigned char *) https_bundle.key_pem;
@@ -249,6 +333,15 @@ static esp_err_t start_https_server(void) {
 
   err = httpd_ssl_start(&server, &config);
   if (err != ESP_OK) return err;
+
+  ESP_LOGW(TAG, "VFS/LWIP fd range: FD_SETSIZE=%u lwip_socket_offset=%u lwip_max_sockets=%u",
+           (unsigned) FD_SETSIZE, (unsigned) (FD_SETSIZE - CONFIG_LWIP_MAX_SOCKETS),
+           (unsigned) CONFIG_LWIP_MAX_SOCKETS);
+
+  ESP_LOGW(TAG, "HTTPS httpd config: max_open_sockets=%u keepalive=%d idle=%u int=%u cnt=%u lru=%d",
+           (unsigned) config.httpd.max_open_sockets, (int) config.httpd.keep_alive_enable,
+           (unsigned) config.httpd.keep_alive_idle, (unsigned) config.httpd.keep_alive_interval,
+           (unsigned) config.httpd.keep_alive_count, (int) config.httpd.lru_purge_enable);
 
   register_http_handlers(server);
   return ESP_OK;
@@ -261,9 +354,21 @@ static esp_err_t start_http_redirect_server(void) {
   config.keep_alive_enable = true;
   config.max_uri_handlers = 4;
   config.server_port = 80;
+  config.open_fn = http_session_open;
+  config.close_fn = http_session_close;
 
   esp_err_t err = httpd_start(&redirect_server, &config);
   if (err != ESP_OK) return err;
+
+  ESP_LOGW(TAG, "VFS/LWIP fd range: FD_SETSIZE=%u lwip_socket_offset=%u lwip_max_sockets=%u",
+           (unsigned) FD_SETSIZE, (unsigned) (FD_SETSIZE - CONFIG_LWIP_MAX_SOCKETS),
+           (unsigned) CONFIG_LWIP_MAX_SOCKETS);
+
+  ESP_LOGW(TAG,
+           "Redirect httpd config: max_open_sockets=%u keepalive=%d idle=%u int=%u cnt=%u lru=%d",
+           (unsigned) config.max_open_sockets, (int) config.keep_alive_enable,
+           (unsigned) config.keep_alive_idle, (unsigned) config.keep_alive_interval,
+           (unsigned) config.keep_alive_count, (int) config.lru_purge_enable);
 
   static http_redirect_config_t redirect_config = {.target_fn = redirect_fallback_target,
                                                    .target_ctx = NULL,
@@ -311,6 +416,18 @@ static void encoder_event_handler(encoder_event_t *event) {
   } else {
     encoder_name = "unknown";
     has_side = false;
+  }
+
+  if (event->type == EVENT_CALIBRATION_CHANGE && event->source->state.cal_state == CAL_DONE) {
+    const char *cal_path =
+      (event->source == leftEncoder) ? ENCODER_CAL_LEFT_PATH : ENCODER_CAL_RIGHT_PATH;
+    encoder_state_t snapshot = event->source->state;
+    esp_err_t err = encoder_cal_save_file(cal_path, &snapshot);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to save %s encoder calibration", encoder_name);
+    } else {
+      ESP_LOGI(TAG, "Saved %s encoder calibration", encoder_name);
+    }
   }
 
   ws_send_encoder_event("position", encoder_name, event->source,
@@ -497,20 +614,24 @@ void app_main(void) {
   tls_cert_set_hostname(settings.hostname);
 
   /* Encoders */
+  encoder_cal_load_file(ENCODER_CAL_LEFT_PATH, &left_cal_state);
+  encoder_cal_load_file(ENCODER_CAL_RIGHT_PATH, &right_cal_state);
   leftEncoder = init_encoder(
-    (encoder_config_t) {.pin_a = GPIO_NUM_26,
-                        .pin_b = GPIO_NUM_25,
-                        .pin_z = GPIO_NUM_33,
+    (encoder_config_t) {.pin_a = GPIO_NUM_11,
+                        .pin_b = GPIO_NUM_10,
+                        .pin_z = GPIO_NUM_9,
                         .debounce_interval = settings.debounce_interval,
                         .calibration_debounce_steps = settings.calibration_debounce_steps,
-                        .on_event_cb = encoder_event_handler});
+                        .on_event_cb = encoder_event_handler},
+    &left_cal_state);
   rightEncoder = init_encoder(
-    (encoder_config_t) {.pin_a = GPIO_NUM_32,
-                        .pin_b = GPIO_NUM_35,
-                        .pin_z = GPIO_NUM_34,
+    (encoder_config_t) {.pin_a = GPIO_NUM_14,
+                        .pin_b = GPIO_NUM_13,
+                        .pin_z = GPIO_NUM_12,
                         .debounce_interval = settings.debounce_interval,
                         .calibration_debounce_steps = settings.calibration_debounce_steps,
-                        .on_event_cb = encoder_event_handler});
+                        .on_event_cb = encoder_event_handler},
+    &right_cal_state);
 
   rep_counter_init(&rep_counter);
   ws_subscribe_message(rep_counter_handle_ws_message, &rep_counter);

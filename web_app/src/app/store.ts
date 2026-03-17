@@ -9,6 +9,7 @@ import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import { Category, Exercise, SetRecord, AppConfig, User } from './models';
 import { espApi } from './services/espApi';
+import { createWsMiddleware } from './wsMiddleware';
 
 type MachineState = {
   /* Machine */
@@ -17,6 +18,7 @@ type MachineState = {
   sliderPositionRight: number;
   lastSliderPosition: number;
   sliderThreshold: number;
+  sliderRepBand: number;
   repsLeft: number;
   repsRight: number;
   sets: number;
@@ -29,6 +31,22 @@ type MachineState = {
   timerIntervalId: number | null;
   reps: number;
   isAlternating: boolean;
+  wakelockTimeoutAt: number | null;
+
+  /* WebSocket */
+  wsReadyState: number;
+  wsErrored: boolean;
+  calibrationEvent: { name: string; state: string; at: number } | null;
+
+  /* Rep Target */
+  repTarget: {
+    enabled: boolean;
+    reps: number;
+    sets: number;
+    restEnabled: boolean;
+    restMinutes: number;
+    restSeconds: number;
+  };
 
   /* Storage */
   exercises: Exercise[];
@@ -52,6 +70,7 @@ const initialState: MachineState = {
   sliderPositionRight: 0,
   lastSliderPosition: 0,
   sliderThreshold: 70,
+  sliderRepBand: 10,
   repsLeft: 0,
   repsRight: 0,
   sets: 0,
@@ -64,6 +83,18 @@ const initialState: MachineState = {
   timerIntervalId: null,
   reps: 0,
   isAlternating: false,
+  wakelockTimeoutAt: null,
+  wsReadyState: -1,
+  wsErrored: false,
+  calibrationEvent: null,
+  repTarget: {
+    enabled: false,
+    reps: 10,
+    sets: 3,
+    restEnabled: false,
+    restMinutes: 0,
+    restSeconds: 0,
+  },
   exercises: [],
   categories: [],
   history: [],
@@ -72,7 +103,6 @@ const initialState: MachineState = {
     theme: window.matchMedia('(prefers-color-scheme: dark)').matches
       ? 'dark'
       : 'light',
-    strictMode: false,
     autoCompleteSecs: 0,
     debugMode: false,
   },
@@ -89,6 +119,35 @@ const machineSlice = createSlice({
     mergeState: (state, action: PayloadAction<Partial<MachineState>>) => {
       Object.assign(state, action.payload);
     },
+    setWakelockTimeoutAt: (state, action: PayloadAction<number | null>) => {
+      state.wakelockTimeoutAt = action.payload;
+    },
+    setWsStatus: (
+      state,
+      action: PayloadAction<{ readyState: number; errored: boolean }>
+    ) => {
+      state.wsReadyState = action.payload.readyState;
+      state.wsErrored = action.payload.errored;
+    },
+    setCalibrationEvent: (
+      state,
+      action: PayloadAction<{ name: string; state: string }>
+    ) => {
+      state.calibrationEvent = { ...action.payload, at: Date.now() };
+    },
+    setRepTarget: (
+      state,
+      action: PayloadAction<{
+        enabled: boolean;
+        reps: number;
+        sets: number;
+        restEnabled: boolean;
+        restMinutes: number;
+        restSeconds: number;
+      }>
+    ) => {
+      state.repTarget = action.payload;
+    },
     setSelectedExerciseState: (
       state,
       action: PayloadAction<Exercise | undefined>
@@ -97,6 +156,7 @@ const machineSlice = createSlice({
       if (action.payload) {
         state.isAlternating = action.payload.type === 'alternating';
         state.sliderThreshold = action.payload.thresholdPercentage;
+        state.sliderRepBand = action.payload.repBand ?? 10;
       }
     },
     setSliderPositionLeft: (state, action: PayloadAction<number>) => {
@@ -111,6 +171,26 @@ const machineSlice = createSlice({
     },
     setSliderThreshold: (state, action: PayloadAction<number>) => {
       state.sliderThreshold = action.payload;
+    },
+    setSliderRepBand: (state, action: PayloadAction<number>) => {
+      state.sliderRepBand = action.payload;
+    },
+    updateExerciseRepBand: (
+      state,
+      action: PayloadAction<{ name: string; repBand: number }>
+    ) => {
+      if (state.selectedExercise?.name === action.payload.name) {
+        state.selectedExercise = {
+          ...state.selectedExercise,
+          repBand: action.payload.repBand,
+        };
+      }
+      const exercise = state.exercises.find(
+        (ex) => ex.name === action.payload.name
+      );
+      if (exercise) {
+        exercise.repBand = action.payload.repBand;
+      }
     },
     incrementLeft: (state) => {
       state.repsLeft += 1;
@@ -216,7 +296,7 @@ export const store = configureStore({
     [espApi.reducerPath]: espApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(espApi.middleware),
+    getDefaultMiddleware().concat(espApi.middleware, createWsMiddleware()),
 });
 
 setupListeners(store.dispatch);
@@ -239,10 +319,16 @@ export const selectUsers = (state: RootState) => state.machine.users;
 
 const {
   mergeState,
+  setWakelockTimeoutAt,
+  setWsStatus,
+  setCalibrationEvent,
+  setRepTarget,
   setSelectedExerciseState,
   setSliderPositionLeft,
   setSliderPositionRight,
   setSliderThreshold,
+  setSliderRepBand,
+  updateExerciseRepBand,
   incrementLeft,
   incrementRight,
   setLastMessageTime,
@@ -270,6 +356,7 @@ export {
   setSliderPositionLeft,
   setSliderPositionRight,
   setSliderThreshold,
+  setSliderRepBand,
   setLastMessageTime,
   setExerciseData,
   updateConfig as setConfig,
@@ -278,7 +365,12 @@ export {
   deleteUser,
   selectUser,
   clearHistory,
+  updateExerciseRepBand,
   updateExerciseThreshold,
+  setRepTarget,
+  setWakelockTimeoutAt,
+  setWsStatus,
+  setCalibrationEvent,
 };
 
 export const clearHistoryForDate =
@@ -300,6 +392,15 @@ export const clearAllHistory =
     }
     const filtered = getState().machine.history.filter(
       (record) => record.userName !== userName
+    );
+    dispatch(setHistory(filtered));
+  };
+
+export const deleteHistoryRecord =
+  (timestamp: number): AppThunk =>
+  (dispatch, getState) => {
+    const filtered = getState().machine.history.filter(
+      (record) => record.timestamp !== timestamp
     );
     dispatch(setHistory(filtered));
   };
@@ -473,6 +574,7 @@ export const setSelectedExercise =
           repsRight: 0,
           activeTime: 0,
           sliderThreshold: exercise.thresholdPercentage,
+          sliderRepBand: exercise.repBand ?? 10,
           selectedExercise: exercise,
           isAlternating: exercise.type === 'alternating',
         })

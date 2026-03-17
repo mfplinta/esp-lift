@@ -7,6 +7,8 @@
 #include <string.h>
 #include <uuid.h>
 
+#define EXERCISE_DEFAULT_REP_BAND 10.0
+
 typedef enum { EXERCISE_SINGULAR, EXERCISE_ALTERNATING, EXERCISE_UNKNOWN } exercise_type_t;
 
 static const char *exercise_type_to_string(exercise_type_t type) {
@@ -103,7 +105,8 @@ int exercises_add(cJSON *root,
                   const char *name,
                   double thresholdPercentage,
                   exercise_type_t type,
-                  const char *category_id) {
+                  const char *category_id,
+                  double rep_band) {
   cJSON *exercises = cJSON_GetObjectItemCaseSensitive(root, "exercises");
   if (!cJSON_IsArray(exercises)) {
     return EXIT_FAILURE;
@@ -142,6 +145,14 @@ int exercises_add(cJSON *root,
         }
       }
 
+      cJSON *rep_band_item = cJSON_GetObjectItemCaseSensitive(exercise, "repBand");
+      if (cJSON_IsNumber(rep_band_item)) {
+        rep_band_item->valuedouble = rep_band;
+      } else {
+        cJSON_ReplaceItemInObject(exercise, "repBand",
+                                  cJSON_CreateNumber(rep_band));
+      }
+
       return EXIT_SUCCESS;
     }
   }
@@ -150,6 +161,7 @@ int exercises_add(cJSON *root,
   cJSON_AddStringToObject(new_exercise, "name", name);
   cJSON_AddNumberToObject(new_exercise, "thresholdPercentage", thresholdPercentage);
   cJSON_AddStringToObject(new_exercise, "type", exercise_type_to_string(type));
+  cJSON_AddNumberToObject(new_exercise, "repBand", rep_band);
   if (category_id && strlen(category_id) > 0) {
     cJSON_AddStringToObject(new_exercise, "categoryId", category_id);
   }

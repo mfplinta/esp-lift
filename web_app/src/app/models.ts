@@ -1,5 +1,4 @@
 export interface SetRecord {
-  // setNumber removed — history items no longer show sequential numbers
   setNumber?: number;
   reps: number;
   duration: number;
@@ -16,6 +15,7 @@ export interface User {
 export interface Exercise {
   name: string;
   thresholdPercentage: number;
+  repBand: number;
   type: 'singular' | 'alternating';
   categoryId?: string;
   categoryName?: string;
@@ -28,7 +28,6 @@ export interface Category {
 
 export interface AppConfig {
   theme: 'light' | 'dark';
-  strictMode: boolean;
   autoCompleteSecs: number;
   debugMode: boolean;
 }

@@ -21,36 +21,42 @@
     {
       "name": "Lat Pulldown",
       "thresholdPercentage": 70,
+      "repBand": 10,
       "type": "singular",
       "categoryId": "3"
     },
     {
       "name": "Chest Fly",
       "thresholdPercentage": 65,
+      "repBand": 10,
       "type": "alternating",
       "categoryId": "2"
     },
     {
       "name": "Triceps Pushdown",
       "thresholdPercentage": 75,
+      "repBand": 10,
       "type": "singular",
       "categoryId": "2"
     },
     {
       "name": "Bicep Curl",
       "thresholdPercentage": 60,
+      "repBand": 10,
       "type": "alternating",
       "categoryId": "3"
     },
     {
       "name": "Row",
       "thresholdPercentage": 70,
+      "repBand": 10,
       "type": "singular",
       "categoryId": "3"
     },
     {
       "name": "Glute Kickback",
       "thresholdPercentage": 65,
+      "repBand": 10,
       "type": "singular",
       "categoryId": "4"
     }

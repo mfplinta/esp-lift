@@ -78,6 +78,8 @@ esp_err_t post_exercises_handler(httpd_req_t *req) {
   cJSON *type = cJSON_GetObjectItemCaseSensitive(req_json, "type");
   cJSON *category_id = cJSON_GetObjectItemCaseSensitive(req_json, "categoryId");
   cJSON *category_name = cJSON_GetObjectItemCaseSensitive(req_json, "categoryName");
+  cJSON *rep_band = cJSON_GetObjectItemCaseSensitive(req_json, "repBand");
+  double rep_band_value = cJSON_IsNumber(rep_band) ? rep_band->valuedouble : EXERCISE_DEFAULT_REP_BAND;
 
   if (!cJSON_IsString(name) || !cJSON_IsNumber(threshold) || !cJSON_IsString(type)) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing or invalid fields");
@@ -127,7 +129,8 @@ esp_err_t post_exercises_handler(httpd_req_t *req) {
                     name->valuestring,
                     threshold->valuedouble,
                     exercise_type,
-                    category_id_value_ptr)) {
+                    category_id_value_ptr,
+                    rep_band_value)) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to add exercise");
     goto cleanup;
   }

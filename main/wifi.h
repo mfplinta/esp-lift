@@ -69,7 +69,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
       captive_dns_start(ip.ip.addr);
       ESP_LOGI(TAG_WIFI, "Captive DNS started");
       break;
-      break;
 
     case WIFI_EVENT_AP_STACONNECTED: {
       wifi_event_ap_staconnected_t *e = event_data;
