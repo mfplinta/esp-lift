@@ -1,4 +1,4 @@
-import { useState, useEffect, useReducer } from 'react';
+import { useState, useEffect, useReducer, useRef } from 'react';
 import {
   Menu,
   Download,
@@ -35,6 +35,7 @@ export default function SetHistory() {
     'active'
   );
   const [todayStr, setTodayStr] = useState(new Date().toDateString());
+  const todayRef = useRef(todayStr);
 
   const dispatch = useAppDispatch();
   const { isResting, history, isDarkMode, selectedUser } = useAppSelector(
@@ -51,10 +52,12 @@ export default function SetHistory() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const next = new Date().toDateString();
-      setTodayStr((prev) => {
-        if (prev !== next) return next;
-        return prev;
-      });
+      if (next !== todayRef.current) {
+        todayRef.current = next;
+        setTodayStr(next);
+        setView('active');
+        setSelectedDate(null);
+      }
     }, 60000);
 
     return () => window.clearInterval(timer);
@@ -146,19 +149,6 @@ export default function SetHistory() {
   const dates = Object.keys(groupedByDate).sort(
     (a, b) => new Date(b).getTime() - new Date(a).getTime()
   );
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const next = new Date().toDateString();
-      if (next !== todayStr) {
-        setTodayStr(next);
-        setView('active');
-        setSelectedDate(null);
-      }
-    }, 60000);
-
-    return () => window.clearInterval(timer);
-  }, [todayStr]);
 
   const totalsDate =
     preToggleView === 'day-detail' && selectedDate ? selectedDate : todayStr;

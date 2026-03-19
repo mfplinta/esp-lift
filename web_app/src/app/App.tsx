@@ -48,15 +48,16 @@ const MSG_WEBSOCKET_ERROR = 'Error connecting to device';
 const MSG_WEBSOCKET_DISCONNECTED = 'Disconnected. Reconnecting...';
 const WAKELOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
+const DEFAULT_HARDWARE_SETTINGS: HardwareConfig = {
+  movement: {
+    debounceInterval: 100,
+    calibrationDebounceSteps: 25,
+  },
+};
+
 export default function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [showSelector, setShowSelector] = useState(false);
-  const [hardwareSettings, setHardwareSettings] = useState<HardwareConfig>({
-    movement: {
-      debounceInterval: 100,
-      calibrationDebounceSteps: 25,
-    },
-  });
 
   // Refs
   const notificationRef = useRef<NotificationHandle>(null);
@@ -277,11 +278,7 @@ export default function App() {
     }
   }, [dispatch, exercisesData]);
 
-  useEffect(() => {
-    if (settingsData) {
-      setHardwareSettings(settingsData);
-    }
-  }, [settingsData]);
+  const hardwareSettings = settingsData ?? DEFAULT_HARDWARE_SETTINGS;
 
   useEffect(() => {
     if (exercisesError) {

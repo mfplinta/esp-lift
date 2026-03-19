@@ -218,4 +218,5 @@ const NotificationStack = forwardRef<
   );
 });
 
+NotificationStack.displayName = 'NotificationStack';
 export default NotificationStack;

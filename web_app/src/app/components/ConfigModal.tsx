@@ -23,8 +23,6 @@ export default function ConfigModal({
   onRestart,
   onHardwareChange,
 }: ConfigModalProps) {
-  if (!isOpen) return null;
-
   const [networkOpen, setNetworkOpen] = useState(false);
   const [wifiSSID, setWifiSSID] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
@@ -52,6 +50,8 @@ export default function ConfigModal({
   const autoCompleteEnabled = !!(
     config.autoCompleteSecs && config.autoCompleteSecs !== 0
   );
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

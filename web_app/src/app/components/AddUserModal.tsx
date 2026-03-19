@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, User } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useAppSelector } from '../store';
 
 interface AddUserModalProps {

@@ -3,14 +3,10 @@
 let
   programmingBaudRate = 921600;
   monitorBaudRate = 921600;
-  pkgsPy310 = import inputs.nixpkgs-py310 {
-    system = pkgs.stdenv.hostPlatform.system;
-    config = {};
-  };
+  espBoard = "esp32s3";
 in
 {
   overlays = [
-    (final: prev: { python310 = pkgsPy310.python310; })
     inputs.esp-dev.overlays.default
   ];
   packages = [ pkgs.esp-idf-full ];
@@ -74,19 +70,25 @@ in
 
     set_common_config() {
       sed -i \
-        -e 's/^.*CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=.*/CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y/' \
-        -e 's/^# CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH is not set.*/CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y/' \
+        -e 's/^CONFIG_MONITOR_BAUD=.*/CONFIG_MONITOR_BAUD=${toString monitorBaudRate}/' \
+        -e 's/^CONFIG_ESPTOOLPY_MONITOR_BAUD=.*/CONFIG_ESPTOOLPY_MONITOR_BAUD=${toString monitorBaudRate}/' \
+        -e 's/^# CONFIG_ESP_CONSOLE_UART_CUSTOM.*/CONFIG_ESP_CONSOLE_UART_CUSTOM=y/' \
+        -e 's/^CONFIG_ESP_CONSOLE_UART_BAUDRATE=.*/CONFIG_ESP_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_ESP_CONSOLE_UART_TX_GPIO=1\nCONFIG_ESP_CONSOLE_UART_RX_GPIO=3/' \
+        -e 's/^# CONFIG_CONSOLE_UART_CUSTOM.*/CONFIG_CONSOLE_UART_CUSTOM=y/' \
+        -e 's/^CONFIG_CONSOLE_UART_BAUDRATE=.*/CONFIG_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_CONSOLE_UART_TX_GPIO=1\nCONFIG_CONSOLE_UART_RX_GPIO=3/' \
         -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=.*/# CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT is not set/' \
         -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_GDBSTUB=.*/# CONFIG_ESP_SYSTEM_PANIC_GDBSTUB is not set/' \
         -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT=.*/# CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT is not set/' \
         -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_NONE=.*/# CONFIG_ESP_SYSTEM_PANIC_NONE is not set/' \
         -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=.*/CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y/' \
-        -e 's/^CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=.*/CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096/' \
+        -e 's/^.*CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=.*/CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096/' \
         -e 's/^.*CONFIG_PARTITION_TABLE_SINGLE_APP=.*/# CONFIG_PARTITION_TABLE_SINGLE_APP is not set/' \
         -e 's/^.*CONFIG_PARTITION_TABLE_CUSTOM is not set.*/CONFIG_PARTITION_TABLE_CUSTOM=y/' \
+        -e 's/^.*CONFIG_LWIP_MAX_SOCKETS=.*/CONFIG_LWIP_MAX_SOCKETS=32/' \
         -e 's/^# CONFIG_HTTPD_WS_SUPPORT is not set.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
-        -e 's/^CONFIG_HTTPD_WS_SUPPORT=.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
-        -e 's/^CONFIG_LWIP_MAX_SOCKETS=.*/CONFIG_LWIP_MAX_SOCKETS=32/' \
+        -e 's/^# CONFIG_ESP_HTTPS_SERVER_ENABLE is not set.*/CONFIG_ESP_HTTPS_SERVER_ENABLE=y/' \
+        -e 's/^# CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH is not set.*/CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y/' \
+        -e 's/^# CONFIG_ESP_TLS_SERVER_SESSION_TICKETS is not set.*/CONFIG_ESP_TLS_SERVER_SESSION_TICKETS=y/' \
         sdkconfig
     }
 
@@ -114,17 +116,7 @@ in
 
     if [ ! -f sdkconfig ]; then
       idf.py reconfigure
-
-      sed -i \
-        -e 's/^.*CONFIG_ESP_HTTPS_SERVER_ENABLE.*/CONFIG_ESP_HTTPS_SERVER_ENABLE=y/' \
-        -e 's/^.*CONFIG_ESP_TLS_SERVER_SESSION_TICKETS.*/CONFIG_ESP_TLS_SERVER_SESSION_TICKETS=y/' \
-        -e 's/^CONFIG_MONITOR_BAUD=.*/CONFIG_MONITOR_BAUD=${toString monitorBaudRate}/' \
-        -e 's/^CONFIG_ESPTOOLPY_MONITOR_BAUD=.*/CONFIG_ESPTOOLPY_MONITOR_BAUD=${toString monitorBaudRate}/' \
-        -e 's/^# CONFIG_ESP_CONSOLE_UART_CUSTOM.*/CONFIG_ESP_CONSOLE_UART_CUSTOM=y/' \
-        -e 's/^CONFIG_ESP_CONSOLE_UART_BAUDRATE=.*/CONFIG_ESP_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_ESP_CONSOLE_UART_TX_GPIO=1\nCONFIG_ESP_CONSOLE_UART_RX_GPIO=3/' \
-        -e 's/^# CONFIG_CONSOLE_UART_CUSTOM.*/CONFIG_CONSOLE_UART_CUSTOM=y/' \
-        -e 's/^CONFIG_CONSOLE_UART_BAUDRATE=.*/CONFIG_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_CONSOLE_UART_TX_GPIO=1\nCONFIG_CONSOLE_UART_RX_GPIO=3/' \
-        sdkconfig
+      idf.py set-target ${espBoard}
 
       set_4mb
     fi
