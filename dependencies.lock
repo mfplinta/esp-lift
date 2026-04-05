@@ -36,6 +36,6 @@ direct_dependencies:
 - espressif/cjson
 - idf
 - joltwallet/littlefs
-manifest_hash: 0303766423370abc58d8c9424f59fbca8ee5bf8098bfcaf0a4691870b11ff01d
+manifest_hash: da5728aa9d30a15a8e794870099b68c7ea63e428a58e1419a696c55858df03e1
 target: esp32s3
 version: 2.0.0

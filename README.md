@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="web_app/public/favicon.svg" alt="Logo" height="100">
+  <img src="frontend/public/favicon.svg" alt="Logo" height="100">
 
   # ESP Lift
   
@@ -44,6 +44,7 @@ devenv shell
 # Options:
 # --flash-size=(4mb)|2mb - destination ESP32 flash size
 # --build-only - do not flash and open monitor
+# --flash-only - skip rebuild and only flash existing binaries
 build
 ```
 

@@ -1,0 +1,115 @@
+#ifndef SETTINGS_H
+#define SETTINGS_H
+
+#include <cJSON.h>
+#include <stdlib.h>
+
+#define DEBOUNCE_MS 100
+#define CALIBRATION_DEBOUNCE_STEPS_DEFAULT 25
+#define DEFAULT_HOSTNAME "esp-lift.arpa"
+
+typedef struct {
+  const char *ssid;
+  const char *password;
+  const char *hostname;
+
+  int debounce_interval;
+  int calibration_debounce_steps;
+} settings_t;
+
+static inline void settings_extract_hostname(cJSON *settings_json, char *out, size_t out_len) {
+  if (!out || out_len == 0) return;
+  out[0] = '\0';
+
+  cJSON *network = cJSON_GetObjectItem(settings_json, "network");
+  cJSON *hostname = network ? cJSON_GetObjectItem(network, "hostname") : NULL;
+  const char *value = cJSON_IsString(hostname) ? hostname->valuestring : DEFAULT_HOSTNAME;
+
+  strncpy(out, value, out_len);
+  out[out_len - 1] = '\0';
+}
+
+int config_load_settings(cJSON *root, settings_t *settings) {
+  settings->debounce_interval = DEBOUNCE_MS;
+  settings->calibration_debounce_steps = CALIBRATION_DEBOUNCE_STEPS_DEFAULT;
+
+  const cJSON *network = cJSON_GetObjectItem(root, "network");
+  if (cJSON_IsObject(network)) {
+    const cJSON *ssid = cJSON_GetObjectItem(network, "ssid");
+    const cJSON *password = cJSON_GetObjectItem(network, "password");
+    const cJSON *hostname = cJSON_GetObjectItem(network, "hostname");
+
+    settings->ssid = cJSON_IsString(ssid) ? ssid->valuestring : "nothing";
+
+    settings->password = cJSON_IsString(password) ? password->valuestring : "nothing";
+
+    settings->hostname = cJSON_IsString(hostname) ? hostname->valuestring : DEFAULT_HOSTNAME;
+  }
+
+  const cJSON *movement = cJSON_GetObjectItem(root, "movement");
+  if (cJSON_IsObject(movement)) {
+    const cJSON *debounce_interval = cJSON_GetObjectItem(movement, "debounceInterval");
+    const cJSON *calibration_debounce_steps =
+      cJSON_GetObjectItem(movement, "calibrationDebounceSteps");
+
+    settings->debounce_interval = cJSON_IsNumber(debounce_interval) ? debounce_interval->valueint : DEBOUNCE_MS;
+    settings->calibration_debounce_steps = cJSON_IsNumber(calibration_debounce_steps)
+      ? calibration_debounce_steps->valueint
+      : CALIBRATION_DEBOUNCE_STEPS_DEFAULT;
+  }
+
+  return EXIT_SUCCESS;
+}
+
+int config_change_settings(cJSON *root, cJSON *patch) {
+  const cJSON *network = cJSON_GetObjectItem(patch, "network");
+  if (cJSON_IsObject(network)) {
+    cJSON *dst = cJSON_GetObjectItem(root, "network");
+
+    cJSON *item;
+    if ((item = cJSON_GetObjectItem(network, "ssid")))
+      if (cJSON_IsString(item))
+        cJSON_ReplaceItemInObject(dst, "ssid", cJSON_Duplicate(item, 1));
+
+    if ((item = cJSON_GetObjectItem(network, "password")))
+      if (cJSON_IsString(item))
+        cJSON_ReplaceItemInObject(dst, "password", cJSON_Duplicate(item, 1));
+
+    if ((item = cJSON_GetObjectItem(network, "hostname")))
+      if (cJSON_IsString(item))
+        cJSON_ReplaceItemInObject(dst, "hostname", cJSON_Duplicate(item, 1));
+  }
+
+  const cJSON *movement = cJSON_GetObjectItem(patch, "movement");
+  if (cJSON_IsObject(movement)) {
+    cJSON *dst = cJSON_GetObjectItem(root, "movement");
+
+    cJSON *item;
+    if ((item = cJSON_GetObjectItem(movement, "debounceInterval")))
+      if (cJSON_IsNumber(item))
+        cJSON_ReplaceItemInObject(dst, "debounceInterval", cJSON_Duplicate(item, 1));
+
+    if ((item = cJSON_GetObjectItem(movement, "calibrationDebounceSteps")))
+      if (cJSON_IsNumber(item))
+        cJSON_ReplaceItemInObject(dst, "calibrationDebounceSteps", cJSON_Duplicate(item, 1));
+  }
+
+  return EXIT_SUCCESS;
+}
+
+/**
+ * Must be freed by caller
+ */
+int config_sanitize_settings(cJSON *root) {
+  cJSON *network = NULL;
+  if(!(network = cJSON_GetObjectItem(root, "network"))) {
+    return EXIT_FAILURE;
+  }
+
+  cJSON_DeleteItemFromObject(network, "ssid");
+  cJSON_DeleteItemFromObject(network, "password");
+
+  return EXIT_SUCCESS;
+}
+
+#endif

@@ -12,5 +12,5 @@ sdkconfig.defaults
 cfg/settings.json
 cfg/https*
 # React app
-web_app/node_modules
-web_app/dist
+frontend/node_modules
+frontend/dist

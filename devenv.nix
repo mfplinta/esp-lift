@@ -19,6 +19,7 @@ in
     set -e
 
     BUILD_ONLY=0
+    FLASH_ONLY=0
     FLASH_SIZE="4mb"
     MERGE_FLAG=""
     
@@ -26,6 +27,11 @@ in
       case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
         --build-only)
           BUILD_ONLY=1
+          shift
+          ;;
+        --flash-only)
+          FLASH_ONLY=1
+          BUILD_ONLY=0
           shift
           ;;
         --flash-size=*)
@@ -68,91 +74,149 @@ in
         ;;
     esac
 
+    ensure_sdkconfig_line() {
+      KEY="$1"
+      VALUE="$2"
+      TMP_FILE="$(mktemp)"
+
+      awk -v key="$KEY" -v value="$VALUE" '
+        BEGIN { replaced = 0 }
+        $0 ~ ("^" key "=") || $0 ~ ("^# " key " is not set$") {
+          if (!replaced) {
+            print key "=" value
+            replaced = 1
+          }
+          next
+        }
+        { print }
+        END {
+          if (!replaced) {
+            print key "=" value
+          }
+        }
+      ' sdkconfig > "$TMP_FILE"
+
+      mv "$TMP_FILE" sdkconfig
+    }
+
+    ensure_sdkconfig_not_set() {
+      KEY="$1"
+      TMP_FILE="$(mktemp)"
+
+      awk -v key="$KEY" '
+        BEGIN { replaced = 0 }
+        $0 ~ ("^" key "=") || $0 ~ ("^# " key " is not set$") {
+          if (!replaced) {
+            print "# " key " is not set"
+            replaced = 1
+          }
+          next
+        }
+        { print }
+        END {
+          if (!replaced) {
+            print "# " key " is not set"
+          }
+        }
+      ' sdkconfig > "$TMP_FILE"
+
+      mv "$TMP_FILE" sdkconfig
+    }
+
+    set_esp32_options() {
+      ensure_sdkconfig_line CONFIG_CONSOLE_UART_BAUDRATE ${toString monitorBaudRate}
+      ensure_sdkconfig_line CONFIG_CONSOLE_UART_TX_GPIO 1
+      ensure_sdkconfig_line CONFIG_CONSOLE_UART_RX_GPIO 3
+    }
+
+    set_esp32s3_options() {
+      ensure_sdkconfig_line CONFIG_CONSOLE_UART_BAUDRATE ${toString monitorBaudRate}
+      ensure_sdkconfig_line CONFIG_CONSOLE_UART_TX_GPIO 43
+      ensure_sdkconfig_line CONFIG_CONSOLE_UART_RX_GPIO 44
+    }
+
     set_common_config() {
-      sed -i \
-        -e 's/^CONFIG_MONITOR_BAUD=.*/CONFIG_MONITOR_BAUD=${toString monitorBaudRate}/' \
-        -e 's/^CONFIG_ESPTOOLPY_MONITOR_BAUD=.*/CONFIG_ESPTOOLPY_MONITOR_BAUD=${toString monitorBaudRate}/' \
-        -e 's/^# CONFIG_ESP_CONSOLE_UART_CUSTOM.*/CONFIG_ESP_CONSOLE_UART_CUSTOM=y/' \
-        -e 's/^CONFIG_ESP_CONSOLE_UART_BAUDRATE=.*/CONFIG_ESP_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_ESP_CONSOLE_UART_TX_GPIO=1\nCONFIG_ESP_CONSOLE_UART_RX_GPIO=3/' \
-        -e 's/^# CONFIG_CONSOLE_UART_CUSTOM.*/CONFIG_CONSOLE_UART_CUSTOM=y/' \
-        -e 's/^CONFIG_CONSOLE_UART_BAUDRATE=.*/CONFIG_CONSOLE_UART_BAUDRATE=${toString monitorBaudRate}\nCONFIG_CONSOLE_UART_TX_GPIO=1\nCONFIG_CONSOLE_UART_RX_GPIO=3/' \
-        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=.*/# CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT is not set/' \
-        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_GDBSTUB=.*/# CONFIG_ESP_SYSTEM_PANIC_GDBSTUB is not set/' \
-        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT=.*/# CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT is not set/' \
-        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_NONE=.*/# CONFIG_ESP_SYSTEM_PANIC_NONE is not set/' \
-        -e 's/^.*CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=.*/CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y/' \
-        -e 's/^.*CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=.*/CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096/' \
-        -e 's/^.*CONFIG_PARTITION_TABLE_SINGLE_APP=.*/# CONFIG_PARTITION_TABLE_SINGLE_APP is not set/' \
-        -e 's/^.*CONFIG_PARTITION_TABLE_CUSTOM is not set.*/CONFIG_PARTITION_TABLE_CUSTOM=y/' \
-        -e 's/^.*CONFIG_LWIP_MAX_SOCKETS=.*/CONFIG_LWIP_MAX_SOCKETS=32/' \
-        -e 's/^# CONFIG_HTTPD_WS_SUPPORT is not set.*/CONFIG_HTTPD_WS_SUPPORT=y/' \
-        -e 's/^# CONFIG_ESP_HTTPS_SERVER_ENABLE is not set.*/CONFIG_ESP_HTTPS_SERVER_ENABLE=y/' \
-        -e 's/^# CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH is not set.*/CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y/' \
-        -e 's/^# CONFIG_ESP_TLS_SERVER_SESSION_TICKETS is not set.*/CONFIG_ESP_TLS_SERVER_SESSION_TICKETS=y/' \
-        sdkconfig
+      ensure_sdkconfig_line CONFIG_MONITOR_BAUD ${toString monitorBaudRate}
+      ensure_sdkconfig_line CONFIG_ESPTOOLPY_MONITOR_BAUD ${toString monitorBaudRate}
+      ensure_sdkconfig_line CONFIG_ESP_CONSOLE_UART_BAUDRATE ${toString monitorBaudRate}
+      ensure_sdkconfig_line CONFIG_ESP_CONSOLE_UART_CUSTOM y
+      ensure_sdkconfig_line CONFIG_CONSOLE_UART_CUSTOM y
+      ensure_sdkconfig_not_set CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT
+      ensure_sdkconfig_not_set CONFIG_ESP_SYSTEM_PANIC_GDBSTUB
+      ensure_sdkconfig_not_set CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT
+      ensure_sdkconfig_not_set CONFIG_ESP_SYSTEM_PANIC_NONE
+      ensure_sdkconfig_line CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT y
+      ensure_sdkconfig_line CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE 4096
+      ensure_sdkconfig_not_set CONFIG_PARTITION_TABLE_SINGLE_APP
+      ensure_sdkconfig_line CONFIG_PARTITION_TABLE_CUSTOM y
+      ensure_sdkconfig_line CONFIG_LWIP_MAX_SOCKETS 32
+      ensure_sdkconfig_line CONFIG_HTTPD_WS_SUPPORT y
+      ensure_sdkconfig_line CONFIG_ESP_HTTPS_SERVER_ENABLE y
+      ensure_sdkconfig_line CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH y
+      ensure_sdkconfig_line CONFIG_ESP_TLS_SERVER_SESSION_TICKETS y
     }
 
     set_2mb() {
       set_common_config
-      sed -i \
-        -e 's/^CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="2MB"/' \
-        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set/' \
-        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_2MB.*/CONFIG_ESPTOOLPY_FLASHSIZE_2MB=y/' \
-        -e 's/^.*CONFIG_PARTITION_TABLE_FILENAME=.*/CONFIG_PARTITION_TABLE_FILENAME="partitions-2mb.csv"/' \
-        -e 's/^.*CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=.*/CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-2mb.csv"/' \
-        sdkconfig
+      ensure_sdkconfig_line CONFIG_ESPTOOLPY_FLASHSIZE '"2MB"'
+      ensure_sdkconfig_not_set CONFIG_ESPTOOLPY_FLASHSIZE_4MB
+      ensure_sdkconfig_line CONFIG_ESPTOOLPY_FLASHSIZE_2MB y
+      ensure_sdkconfig_line CONFIG_PARTITION_TABLE_FILENAME '"partitions-2mb.csv"'
+      ensure_sdkconfig_line CONFIG_PARTITION_TABLE_CUSTOM_FILENAME '"partitions-2mb.csv"'
     }
 
     set_4mb() {
       set_common_config
-      sed -i \
-        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE=.*/CONFIG_ESPTOOLPY_FLASHSIZE="4MB"/' \
-        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_4MB.*/CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y/' \
-        -e 's/^.*CONFIG_ESPTOOLPY_FLASHSIZE_2MB.*/# CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set/' \
-        -e 's/^.*CONFIG_PARTITION_TABLE_FILENAME=.*/CONFIG_PARTITION_TABLE_FILENAME="partitions-4mb.csv"/' \
-        -e 's/^.*CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=.*/CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-4mb.csv"/' \
-        sdkconfig
+      ensure_sdkconfig_line CONFIG_ESPTOOLPY_FLASHSIZE '"4MB"'
+      ensure_sdkconfig_line CONFIG_ESPTOOLPY_FLASHSIZE_4MB y
+      ensure_sdkconfig_not_set CONFIG_ESPTOOLPY_FLASHSIZE_2MB
+      ensure_sdkconfig_line CONFIG_PARTITION_TABLE_FILENAME '"partitions-4mb.csv"'
+      ensure_sdkconfig_line CONFIG_PARTITION_TABLE_CUSTOM_FILENAME '"partitions-4mb.csv"'
     }
 
     if [ ! -f sdkconfig ]; then
       idf.py reconfigure
       idf.py set-target ${espBoard}
 
-      set_4mb
+      set_${espBoard}_options
     fi
 
     echo "Applying flash size: $FLASH_SIZE"
 
-    if [ "$FLASH_SIZE" = "2mb" ]; then
-      set_2mb
-    else
-      set_4mb
+    if [ "$FLASH_ONLY" -eq 0 ]; then
+      if [ "$FLASH_SIZE" = "2mb" ]; then
+        set_2mb
+      else
+        set_4mb
+      fi
+
+      (
+        cd frontend
+        [ -d node_modules ] || npm i
+        npx prettier --write .
+        vite build
+      )
+
+      (
+        [ -f cfg/settings.json ] || cp cfg/settings.template.json cfg/settings.json
+        cd backend
+        clang-format -i *.c *.h
+      )
+
+      idf.py build
+
+      if [ -n "$MERGE_FLAG" ]; then
+        idf.py merge-bin $MERGE_FLAG
+      else
+        idf.py merge-bin
+      fi
     fi
 
-    (
-      cd web_app
-      [ -d node_modules ] || npm i
-      npx prettier --write .
-      vite build
-    )
-
-    (
-      [ -f cfg/settings.json ] || cp cfg/settings.template.json cfg/settings.json
-      cd main
-      clang-format -i *.c *.h
-    )
-
-    idf.py build
-
-    if [ -n "$MERGE_FLAG" ]; then
-      idf.py merge-bin $MERGE_FLAG
-    else
-      idf.py merge-bin
-    fi
-
-    if [ "$BUILD_ONLY" -eq 0 ]; then
+    if [ "$FLASH_ONLY" -eq 1 ] || [ "$BUILD_ONLY" -eq 0 ]; then
       idf.py -b ${toString programmingBaudRate} flash
-      idf.py monitor
+      if [ "$FLASH_ONLY" -eq 0 ]; then
+        idf.py monitor
+      fi
     fi
   '';
   
@@ -162,4 +226,5 @@ in
     enable = true;
     npm.enable = true;
   };
+  devenv.warnOnNewVersion = false;
 }
