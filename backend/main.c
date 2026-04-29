@@ -314,7 +314,7 @@ void app_main(void) {
   ws_subscribe_message(ws_rep_counter_handle_message, &rep_counter);
 
   /* HTTP(S) Server */
-  https_server_config_t https_config = {.max_uri_handlers = get_captive_paths_count() + 9};
+  https_server_config_t https_config = {.max_uri_handlers = get_captive_paths_count() + 10};
   ESP_ERROR_CHECK(https_server_start(&https_config, register_http_handlers, NULL));
   http_redirect_server_config_t redirect_config = {.target_fn = captiveportal_fallback_target,
                                                    .target_ctx = NULL,

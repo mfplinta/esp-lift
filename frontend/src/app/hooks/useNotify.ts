@@ -18,23 +18,18 @@ const variantFn = {
 } as const;
 
 export function useNotify() {
-  const notify = useCallback(
-    (message: string, options?: NotifyOptions) => {
-      const variant = options?.variant ?? 'default';
-      const opts: ExternalToast = {
-        id: message,
-        duration:
-          options?.autoDismiss === 0
-            ? Infinity
-            : (options?.autoDismiss ?? 3000),
-      };
-      if (options?.icon) {
-        opts.icon = createElement(options.icon, { size: 20 });
-      }
-      variantFn[variant](message, opts);
-    },
-    []
-  );
+  const notify = useCallback((message: string, options?: NotifyOptions) => {
+    const variant = options?.variant ?? 'default';
+    const opts: ExternalToast = {
+      id: message,
+      duration:
+        options?.autoDismiss === 0 ? Infinity : (options?.autoDismiss ?? 3000),
+    };
+    if (options?.icon) {
+      opts.icon = createElement(options.icon, { size: 20 });
+    }
+    variantFn[variant](message, opts);
+  }, []);
 
   const dismissNotification = useCallback((message: string) => {
     toast.dismiss(message);

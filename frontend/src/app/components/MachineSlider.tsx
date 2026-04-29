@@ -163,7 +163,7 @@ export default function MachineSlider({ isLeftSlider }: MachineSliderProps) {
             key={reps}
             className="absolute w-full h-full rounded-3xl pointer-events-none bg-white z-21 top-0"
             style={{
-              animation: 'blink 0.3s ease-out',
+              animation: 'blink 0.3s ease-out forwards',
             }}
           />
         )}

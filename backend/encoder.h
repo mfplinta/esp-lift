@@ -70,15 +70,38 @@ static void event_consumer_task(void *arg) {
   }
 }
 
-static inline void send_callback(encoder_t *enc, encoder_event_type_t type) {
-  uint32_t now = xTaskGetTickCountFromISR();
+static inline bool should_send_callback(encoder_t *enc, encoder_event_type_t type, uint32_t now) {
   uint32_t debounce_ticks = pdMS_TO_TICKS(enc->config.debounce_interval);
 
   if ((now - enc->state.last_time) >= debounce_ticks || type == EVENT_CALIBRATION_CHANGE) {
     enc->state.last_time = now;
-    encoder_event_t event = {.source = enc, .type = type};
-    xQueueSendFromISR(enc->queue, &event, NULL);
+    return true;
   }
+
+  return false;
+}
+
+static inline void send_callback(encoder_t *enc, encoder_event_type_t type) {
+  uint32_t now = xTaskGetTickCount();
+
+  if (!should_send_callback(enc, type, now)) return;
+
+  encoder_event_t event = {.source = enc, .type = type};
+  xQueueSend(enc->queue, &event, 0);
+}
+
+static inline void send_callback_from_isr(encoder_t *enc, encoder_event_type_t type) {
+  uint32_t now = xTaskGetTickCountFromISR();
+
+  if (!should_send_callback(enc, type, now)) return;
+
+  encoder_event_t event = {.source = enc, .type = type};
+  xQueueSendFromISR(enc->queue, &event, NULL);
+}
+
+static inline void send_callback_now(encoder_t *enc, encoder_event_type_t type) {
+  encoder_event_t event = {.source = enc, .type = type};
+  xQueueSend(enc->queue, &event, 0);
 }
 
 static inline void set_cal_state(encoder_t *encoder, calibration_state_t cal_state) {
@@ -86,6 +109,14 @@ static inline void set_cal_state(encoder_t *encoder, calibration_state_t cal_sta
   encoder->state.cal_state = cal_state;
   if (current_state != cal_state) {
     send_callback(encoder, EVENT_CALIBRATION_CHANGE);
+  }
+}
+
+static inline void set_cal_state_from_isr(encoder_t *encoder, calibration_state_t cal_state) {
+  calibration_state_t current_state = encoder->state.cal_state;
+  encoder->state.cal_state = cal_state;
+  if (current_state != cal_state) {
+    send_callback_from_isr(encoder, EVENT_CALIBRATION_CHANGE);
   }
 }
 
@@ -115,7 +146,7 @@ static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
         (enc->state.cal_dir == DIR_POSITIVE ? enc->state.reverse_accum : -enc->state.reverse_accum);
       enc->state.max_distance = 0;
       enc->state.reverse_accum = 0;
-      set_cal_state(enc, CAL_SEEK_MAX);
+      set_cal_state_from_isr(enc, CAL_SEEK_MAX);
     }
     break;
 
@@ -127,7 +158,7 @@ static inline void encoder_calibration_step(encoder_t *enc, int32_t delta_raw) {
     } else {
       enc->state.reverse_accum += step;
       if (enc->state.reverse_accum >= debounce_steps && enc->state.max_distance > 0) {
-        set_cal_state(enc, CAL_DONE);
+        set_cal_state_from_isr(enc, CAL_DONE);
       }
     }
     break;
@@ -169,7 +200,7 @@ static void IRAM_ATTR rotation_handler(void *arg) {
   encoder_calibration_step(enc, delta_raw);
   encoder_update_calibrated(enc);
 
-  send_callback(enc, EVENT_ROTATION);
+  send_callback_from_isr(enc, EVENT_ROTATION);
 }
 
 static void IRAM_ATTR reset_handler(void *arg) {
@@ -192,6 +223,16 @@ void encoder_reset_calibration(encoder_t *enc) {
   enc->state.reverse_accum = 0;
   enc->state.z_seen = false;
   enc->state.calibrated = CAL_MIN;
+}
+
+void encoder_zero_calibrated(encoder_t *enc) {
+  if (!enc) return;
+
+  ESP_LOGI("ENCODER", "Zeroed calibrated position");
+  enc->state.offset = enc->state.start_count - enc->state.raw_count;
+  enc->state.reverse_accum = 0;
+  enc->state.calibrated = CAL_MIN;
+  send_callback_now(enc, EVENT_ROTATION);
 }
 
 encoder_t *init_encoder(encoder_config_t enc_config, const encoder_state_t *initial_cal) {
