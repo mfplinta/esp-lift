@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWakeLock } from 'react-screen-wake-lock';
 import { Sun, Moon, Settings, Wifi, Dumbbell, Bell } from 'lucide-react';
 import MachineVisualizer from './components/MachineVisualizer';
@@ -38,6 +38,7 @@ import {
   useRestartMutation,
   useUpsertExerciseMutation,
   useUpdateSettingsMutation,
+  useZeroEncoderMutation,
 } from './services/espApi';
 
 const MSG_WEBSOCKET_CONNECTING = 'Connecting...';
@@ -60,6 +61,7 @@ export default function App() {
   // Refs
   const wakeLockTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
+  const previousSelectedExerciseNameRef = useRef<string | undefined>(undefined);
 
   const dispatch = useAppDispatch();
   const {
@@ -101,6 +103,7 @@ export default function App() {
   const [restart] = useRestartMutation();
   const [updateSettings] = useUpdateSettingsMutation();
   const [upsertExercise] = useUpsertExerciseMutation();
+  const [zeroEncoder] = useZeroEncoderMutation();
 
   const [repCounterOpen, setRepCounterOpen] = useState(false);
 
@@ -279,6 +282,37 @@ export default function App() {
       notify('Failed to fetch settings', { variant: 'error' });
     }
   }, [settingsError]);
+
+  useEffect(() => {
+    const selectedExerciseName = selectedExercise?.name;
+
+    if (selectedExerciseName === previousSelectedExerciseNameRef.current) {
+      return;
+    }
+
+    previousSelectedExerciseNameRef.current = selectedExerciseName;
+
+    if (!selectedExerciseName) {
+      return;
+    }
+
+    if (!config.autoZeroOnExerciseChange) {
+      return;
+    }
+
+    zeroEncoder()
+      .unwrap()
+      .catch(() => {
+        notify('Failed to zero encoder for the selected exercise', {
+          variant: 'error',
+        });
+      });
+  }, [
+    config.autoZeroOnExerciseChange,
+    notify,
+    selectedExercise?.name,
+    zeroEncoder,
+  ]);
 
   useEffect(() => {
     if (!selectedExercise) return;

@@ -183,7 +183,35 @@ export default function ConfigModal({
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <Label
-                      htmlFor="auto-set"
+                      htmlFor="auto-zero-on-exercise-change"
+                      className="text-base font-semibold"
+                    >
+                      Zero on Exercise Change
+                    </Label>
+                    <p
+                      className={`text-sm mt-1 ${
+                        isDarkMode ? 'text-gray-400' : 'text-gray-600'
+                      }`}
+                    >
+                      Automatically zero the encoder when switching exercises
+                    </p>
+                  </div>
+                  <Switch
+                    id="auto-zero-on-exercise-change"
+                    checked={config.autoZeroOnExerciseChange}
+                    onCheckedChange={(checked) =>
+                      dispatch(setConfig({ autoZeroOnExerciseChange: checked }))
+                    }
+                    className="ml-4"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <Label
+                      htmlFor="debug-mode"
                       className="text-base font-semibold"
                     >
                       Debug Mode
@@ -197,12 +225,12 @@ export default function ConfigModal({
                     </p>
                   </div>
                   <Switch
-                    id="auto-set"
+                    id="debug-mode"
                     checked={config.debugMode}
                     onCheckedChange={(checked) =>
                       dispatch(setConfig({ debugMode: checked }))
                     }
-                    className="ml-4 "
+                    className="ml-4"
                   />
                 </div>
               </div>

@@ -64,6 +64,12 @@ export const espApi = createApi({
         responseHandler: 'text',
       }),
     }),
+    zeroEncoder: builder.mutation<string, void>({
+      query: () => ({
+        url: 'calibrate/zero',
+        responseHandler: 'text',
+      }),
+    }),
   }),
 });
 
@@ -76,4 +82,5 @@ export const {
   useUpdateSettingsMutation,
   useCalibrateMutation,
   useRestartMutation,
+  useZeroEncoderMutation,
 } = espApi;

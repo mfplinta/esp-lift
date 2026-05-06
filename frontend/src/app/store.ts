@@ -105,6 +105,7 @@ const initialState: MachineState = {
       : 'light',
     autoCompleteSecs: 0,
     debugMode: false,
+    autoZeroOnExerciseChange: true,
   },
   isConfigHydrated: false,
   users: [{ name: 'Default User', color: '#4F46E5' }],
@@ -424,7 +425,12 @@ export const hydrateConfig = (): AppThunk => (dispatch, getState) => {
     const savedConfig = localStorage.getItem('app_settings');
     if (savedConfig) {
       try {
-        dispatch(setConfigState(JSON.parse(savedConfig)));
+        dispatch(
+          setConfigState({
+            ...getState().machine.config,
+            ...JSON.parse(savedConfig),
+          })
+        );
         dispatch(setConfigHydrated(true));
         return;
       } catch {

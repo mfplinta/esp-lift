@@ -30,6 +30,7 @@ export interface AppConfig {
   theme: 'light' | 'dark';
   autoCompleteSecs: number;
   debugMode: boolean;
+  autoZeroOnExerciseChange: boolean;
 }
 
 export interface HardwareConfig {
