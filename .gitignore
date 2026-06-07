@@ -8,7 +8,7 @@ build/
 managed_components/
 sdkconfig
 sdkconfig.old
-sdkconfig.defaults
+sdkconfig.local
 cfg/settings.json
 cfg/https*
 # React app

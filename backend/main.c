@@ -129,7 +129,7 @@ static void encoder_event_handler(encoder_event_t *event) {
 static inline void monitor_system_info() {
   int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
   fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
-  printf("CTRL+C: stop monitor | j: left rep | k: right rep\n\n\n\n");
+  printf("CTRL+C: stop monitor | r: reset calibration\n\n\n\n");
   while (1) {
     multi_heap_info_t info;
     heap_caps_get_info(&info, MALLOC_CAP_DEFAULT);
@@ -163,12 +163,6 @@ static inline void monitor_system_info() {
       encoder_reset_calibration(leftEncoder);
       encoder_reset_calibration(rightEncoder);
       printf("\nCalibration cleared.\n");
-    } else if (c == 'j') {
-      ws_encoder_publish(&ws_encoder_ctx, "rep", "left", leftEncoder,
-                         cal_state_names[leftEncoder->state.cal_state]);
-    } else if (c == 'k') {
-      ws_encoder_publish(&ws_encoder_ctx, "rep", "right", rightEncoder,
-                         cal_state_names[rightEncoder->state.cal_state]);
     }
 
     vTaskDelay(pdMS_TO_TICKS(300));
@@ -179,19 +173,39 @@ static inline void monitor_system_info() {
 
 static inline void print_help() {
   printf("Welcome to ESP-LIFT.\n\n"
+         "Main menu:\n"
          "1. Get system information\n"
          "2. Restart ESP\n"
          "3. List dir\n"
-         "4. Cat file\n");
+         "4. Cat file\n\n"
+         "Diagnostics:\n"
+         "j. Send left rep\n"
+         "k. Send right rep\n\n"
+         "h. Show help\n");
+}
+
+static inline void print_help_hint() {
+  printf("ESP-LIFT ready. Press h for help.\n");
+}
+
+static inline void send_manual_rep(const char *encoder_name, encoder_t *encoder) {
+  ws_encoder_publish(&ws_encoder_ctx, "rep", encoder_name, encoder,
+                     cal_state_names[encoder->state.cal_state]);
 }
 
 static void input_task(void *arg) {
-  print_help();
+  print_help_hint();
   while (1) {
     printf("> ");
     char option = getchar();
+    if (option == '\n' || option == '\r') {
+      continue;
+    }
     printf("%c\n", option);
     switch (option) {
+    case 'h':
+      print_help();
+      break;
     case '1':
       monitor_system_info();
       break;
@@ -232,9 +246,15 @@ static void input_task(void *arg) {
       }
       fclose(f);
       break;
+    case 'j':
+      send_manual_rep("left", leftEncoder);
+      break;
+    case 'k':
+      send_manual_rep("right", rightEncoder);
+      break;
 
     default:
-      print_help();
+      print_help_hint();
       break;
     }
   }

@@ -3,50 +3,115 @@ name: Build and Release
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IDF_DOCKER_TAG: v5.5.2
+
 jobs:
-  build:
+  version:
     runs-on: ubuntu-latest
-    name: Build
+    name: Version
 
     outputs:
       version: ${{ steps.version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v5
-
       - name: Generate version
         id: version
-        run: echo "version=$(date -u +'%Y%m%d.%H%M%S')" >> $GITHUB_OUTPUT
+        run: echo "version=$(date -u +'%Y%m%d.%H%M%S')" >> "$GITHUB_OUTPUT"
 
-      - uses: cachix/install-nix-action@v31
+  image:
+    runs-on: ubuntu-latest
+    name: ESP-IDF image
 
-      - uses: cachix/cachix-action@v16
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set image name
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          owner="${OWNER,,}"
+          echo "image=ghcr.io/${owner}/esp-lift-idf:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
         with:
-          name: devenv
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install devenv.sh
-        run: nix profile install nixpkgs#devenv
+      - name: Build and push ESP-IDF image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          build-args: DOCKER_TAG=${{ env.IDF_DOCKER_TAG }}
+          tags: ${{ steps.image.outputs.image }}
+          push: true
+          cache-from: type=gha,scope=esp-idf-image
+          cache-to: type=gha,scope=esp-idf-image,mode=max
 
-      - name: Build ESP32 firmware (4mb)
+  build:
+    runs-on: ubuntu-latest
+    name: Build ${{ matrix.target }} ${{ matrix.flash_size }}
+    needs:
+      - version
+      - image
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - esp32
+          - esp32s3
+        flash_size:
+          - 2mb
+          - 4mb
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build firmware
         run: |
-          mkdir -p build/out
-          devenv shell build --build-only --flash-size 4mb --merge-flag="--output ./out/4mb.bin"
-
-      - name: Build ESP32 firmware (2mb)
-        run: |
-          devenv shell build --build-only --flash-size 2mb --merge-flag="--output ./out/2mb.bin"
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR=/workspace \
+            -e IDF_TARGET=${{ matrix.target }} \
+            -e FLASH_SIZE=${{ matrix.flash_size }} \
+            ${{ needs.image.outputs.image }} \
+            ./scripts/ci-build-firmware.sh
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ steps.version.outputs.version }}
-          path: build/out/
+          name: firmware-${{ needs.version.outputs.version }}-${{ matrix.target }}-${{ matrix.flash_size }}
+          path: build/out/${{ matrix.target }}-${{ matrix.flash_size }}.bin
           if-no-files-found: error
 
   release:
     runs-on: ubuntu-latest
     name: Release
-    needs: build
+    needs:
+      - version
+      - build
     permissions:
       contents: write
 
@@ -54,13 +119,14 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: firmware-${{ needs.build.outputs.version }}
+          pattern: firmware-${{ needs.version.outputs.version }}-*
           path: firmware
+          merge-multiple: true
 
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v${{ needs.build.outputs.version }}
-          name: Firmware ${{ needs.build.outputs.version }}
-          artifacts: "firmware/*"
+          tag: v${{ needs.version.outputs.version }}
+          name: Firmware ${{ needs.version.outputs.version }}
+          artifacts: "firmware/*.bin"
           generateReleaseNotes: true

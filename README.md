@@ -28,25 +28,21 @@ ESP32-based rep counter for cable machines.
 pip install esptool
 
 # Change COM_PORT with either the COM port shown in Device Manager on Windows, or /dev/ttyUSB0 on Linux
-esptool -p COM_PORT -b 921600 write_flash --flash_mode dio --flash_size detect --flash_freq 40m 0x0 4mb.bin
+esptool -p COM_PORT -b 921600 write_flash --flash_mode dio --flash_size detect --flash_freq 80m 0x0 esp32s3-4mb.bin
 ```
 
 ## How to build
 
-First, set up Wi-Fi credentials and defaults under the `cfg` directory.
+Open the project in the devcontainer and use the ESP-IDF VS Code extension to
+build, flash, and monitor. The devcontainer defaults to `esp32s3` with the
+`4mb` flash layout;
 
-Next, make sure you have [devenv](https://devenv.sh/getting-started/) installed, then go into the project root, and execute:
+The ESP-IDF build also builds the web app before creating the `www` LittleFS
+image. On devcontainer creation, `cfg/settings.json` is created from
+`cfg/settings.template.json` if it does not already exist.
 
-```sh
-devenv shell
-
-# Builds web app and ESP binary, flashes, and opens serial monitor
-# Options:
-# --flash-size=(4mb)|2mb - destination ESP32 flash size
-# --build-only - do not flash and open monitor
-# --flash-only - skip rebuild and only flash existing binaries
-build
-```
+Release builds are produced by GitHub Actions for `esp32` and `esp32s3`, each
+with the `2mb` and `4mb` flash layouts.
 
 ## Architecture
 

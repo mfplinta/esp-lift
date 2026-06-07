@@ -1,0 +1,22 @@
+{
+	"name": "ESP Lift",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": "..",
+		"args": {
+			"DOCKER_TAG": "v5.5.2"
+		}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"espressif.esp-idf-extension",
+				"espressif.esp-idf-web"
+			]
+		}
+	},
+	"runArgs": [
+		"--privileged"
+	],
+	"postCreateCommand": "idf.py --version && npm --prefix frontend ci && ([ -f cfg/settings.json ] || cp cfg/settings.template.json cfg/settings.json)"
+}
